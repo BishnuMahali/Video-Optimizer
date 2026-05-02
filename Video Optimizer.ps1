@@ -91,9 +91,10 @@ while ($runningMenu) {
             }
         }
         "4" {
-            $newQuality = Read-Host "Enter new quality value (e.g. 18-35)"
-            if ($newQuality -match '^\d+$') { $quality = $newQuality }
-            else { Write-Host "Invalid number!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+            Write-Host "Smart recommendation: '23,27,30' (Attempts 23 first, falls back to 27, then 30 if output is larger. Max 3 passes.)" -ForegroundColor Yellow
+            $newQuality = Read-Host "Enter new quality value or up to 3 comma-separated values (e.g., 23, 27, 30)"
+            if ($newQuality -match '^\d+(\s*,\s*\d+){0,2}$') { $quality = $newQuality -replace '\s+', '' }
+            else { Write-Host "Invalid input! Please enter a number or up to 3 comma-separated numbers." -ForegroundColor Red; Start-Sleep -Seconds 1 }
         }
         "5" {
             $preset = Read-Host "Enter preset (e.g., slow, medium, p5) or leave empty"
@@ -140,6 +141,7 @@ $failedCount = 0
 
 $searchPattern = "*.*" # Let ffprobe handle validation
 $files = if ($recursive) { Get-ChildItem -Path $targetFolder -File -Recurse } else { Get-ChildItem -Path $targetFolder -File }
+$qualityList = $quality -split ','
 
 foreach ($file in $files) {
     if ($file.FullName -eq $logFile) { continue }
@@ -174,107 +176,132 @@ foreach ($file in $files) {
 
     Write-Host "🎬 Processing video: $($file.Name) [Codec: $codec]"
 
-    # --- Build FFmpeg args dynamically ---
-    $ffArgs = @("-y")
-
-    if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
-    elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
-    # amf hwaccel can sometimes be tricky depending on ffmpeg build, so we omit generic hwaccel or use d3d11va
-
-    $ffArgs += @("-i", $input, "-c:v", $videoCodec)
-
-    switch ($mode) {
-        "crf" { $ffArgs += @("-crf", $quality) }
-        "cq"  { $ffArgs += @("-cq", $quality, "-b:v", "0") }
-        "qp"  { $ffArgs += @("-qp", $quality) }
-        "global_quality" { $ffArgs += @("-global_quality", $quality) }
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($preset)) {
-        $ffArgs += @("-preset", $preset)
-    }
-
-    # NVENC extras
-    if ($videoCodec -match "nvenc") {
-        $ffArgs += @("-spatial_aq","1","-aq-strength","8")
-    }
-
-    # Audio
-    if ($audioAction -eq "Copy") {
-        $ffArgs += @("-c:a","copy")
-    } else {
-        $ffArgs += @("-c:a","aac","-b:a","128k")
-    }
-
-    $ffArgs += @($tempOutput)
-
-    # --- Run ---
-    $global:LASTEXITCODE = 0
-    & ffmpeg @ffArgs
-
-    $ffmpegExit = $global:LASTEXITCODE
-    Start-Sleep -Milliseconds 500
-
     $success = $false
     $unoptimizable = $false
     $unoptReason = ""
+    $successfulQuality = ""
 
-    if ($ffmpegExit -ne 0) {
-        Write-Host "❌ FFmpeg error (exit $ffmpegExit)"
-        if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
-        $unoptimizable = $true
-        $unoptReason = "FFmpeg error ($ffmpegExit)"
-    }
-    elseif (Test-Path $tempOutput) {
-        $outSize = (Get-Item $tempOutput).Length
-        $inSize  = (Get-Item $input).Length
+    for ($i = 0; $i -lt $qualityList.Length; $i++) {
+        $q = $qualityList[$i]
+        if ($qualityList.Length -gt 1) {
+            Write-Host "▶️ Pass $($i + 1)/$($qualityList.Length) with Quality: $q" -ForegroundColor Cyan
+        }
 
-        $inMB   = [math]::Round($inSize  / 1MB, 2)
-        $outMB  = [math]::Round($outSize / 1MB, 2)
-        $diffMB = [math]::Round(($inSize - $outSize) / 1MB, 2)
-        $percent = if ($inSize -gt 0) { [math]::Round((($inSize - $outSize) / $inSize) * 100, 2) } else { 0 }
+        # --- Build FFmpeg args dynamically ---
+        $ffArgs = @("-y")
 
-        Write-Host "📊 Original: ${inMB}MB | Output: ${outMB}MB | Diff: ${diffMB}MB (${percent}%)"
+        if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
+        elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+        # amf hwaccel can sometimes be tricky depending on ffmpeg build, so we omit generic hwaccel or use d3d11va
 
-        if ($outSize -gt 1MB) {
-            try {
-                $inDurStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input" | Out-String).Trim()
-                $outDurStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOutput" | Out-String).Trim()
+        $ffArgs += @("-i", $input, "-c:v", $videoCodec)
 
-                $inDur  = [double]::Parse($inDurStr,  [System.Globalization.CultureInfo]::InvariantCulture)
-                $outDur = [double]::Parse($outDurStr, [System.Globalization.CultureInfo]::InvariantCulture)
+        switch ($mode) {
+            "crf" { $ffArgs += @("-crf", $q) }
+            "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
+            "qp"  { $ffArgs += @("-qp", $q) }
+            "global_quality" { $ffArgs += @("-global_quality", $q) }
+        }
 
-                $durDiff = [math]::Abs($inDur - $outDur)
+        if (-not [string]::IsNullOrWhiteSpace($preset)) {
+            $ffArgs += @("-preset", $preset)
+        }
 
-                if ($durDiff -le 2) {
-                    if ($outSize -lt $inSize) {
-                        $success = $true
-                        $totalInBytes += $inSize
-                        $totalOutBytes += $outSize
+        # NVENC extras
+        if ($videoCodec -match "nvenc") {
+            $ffArgs += @("-spatial_aq","1","-aq-strength","8")
+        }
+
+        # Audio
+        if ($audioAction -eq "Copy") {
+            $ffArgs += @("-c:a","copy")
+        } else {
+            $ffArgs += @("-c:a","aac","-b:a","128k")
+        }
+
+        $ffArgs += @($tempOutput)
+
+        # --- Run ---
+        $global:LASTEXITCODE = 0
+        & ffmpeg @ffArgs
+
+        $ffmpegExit = $global:LASTEXITCODE
+        Start-Sleep -Milliseconds 500
+
+        $unoptimizable = $false
+        $unoptReason = ""
+
+        if ($ffmpegExit -ne 0) {
+            Write-Host "❌ FFmpeg error (exit $ffmpegExit)"
+            if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+            $unoptimizable = $true
+            $unoptReason = "FFmpeg error ($ffmpegExit)"
+            break # No point in retrying on hard FFmpeg error
+        }
+        elseif (Test-Path $tempOutput) {
+            $outSize = (Get-Item $tempOutput).Length
+            $inSize  = (Get-Item $input).Length
+
+            $inMB   = [math]::Round($inSize  / 1MB, 2)
+            $outMB  = [math]::Round($outSize / 1MB, 2)
+            $diffMB = [math]::Round(($inSize - $outSize) / 1MB, 2)
+            $percent = if ($inSize -gt 0) { [math]::Round((($inSize - $outSize) / $inSize) * 100, 2) } else { 0 }
+
+            Write-Host "📊 Original: ${inMB}MB | Output: ${outMB}MB | Diff: ${diffMB}MB (${percent}%)"
+
+            if ($outSize -gt 1MB) {
+                try {
+                    $inDurStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input" | Out-String).Trim()
+                    $outDurStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOutput" | Out-String).Trim()
+
+                    $inDur  = [double]::Parse($inDurStr,  [System.Globalization.CultureInfo]::InvariantCulture)
+                    $outDur = [double]::Parse($outDurStr, [System.Globalization.CultureInfo]::InvariantCulture)
+
+                    $durDiff = [math]::Abs($inDur - $outDur)
+
+                    if ($durDiff -le 2) {
+                        if ($outSize -lt $inSize) {
+                            $success = $true
+                            $successfulQuality = $q
+                            $totalInBytes += $inSize
+                            $totalOutBytes += $outSize
+                            break # Success, break out of multi-pass loop
+                        } else {
+                            Write-Host "⚠️ Output larger than source"
+                            $unoptimizable = $true
+                            $unoptReason = "Output larger than source"
+                            if ($i -lt ($qualityList.Length - 1)) {
+                                Write-Host "🔄 Falling back to next quality setting..." -ForegroundColor Yellow
+                                if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+                                continue
+                            } else {
+                                break # Failed on last pass
+                            }
+                        }
                     } else {
-                        Write-Host "⚠️ Output larger than source"
+                        Write-Host "⚠️ Duration mismatch (${durDiff}s)"
                         $unoptimizable = $true
-                        $unoptReason = "Output larger than source"
+                        $unoptReason = "Duration mismatch (${durDiff}s)"
+                        break # Critical error, stop retries
                     }
-                } else {
-                    Write-Host "⚠️ Duration mismatch (${durDiff}s)"
+                } catch {
+                    Write-Host "⚠️ Duration check failed"
                     $unoptimizable = $true
-                    $unoptReason = "Duration mismatch (${durDiff}s)"
+                    $unoptReason = "Duration check failed"
+                    break # Critical error, stop retries
                 }
-            } catch {
-                Write-Host "⚠️ Duration check failed"
+            } else {
+                Write-Host "⚠️ Output too small (<1MB)"
                 $unoptimizable = $true
-                $unoptReason = "Duration check failed"
+                $unoptReason = "Output <1MB"
+                break # Critical error, stop retries
             }
         } else {
-            Write-Host "⚠️ Output too small (<1MB)"
+            Write-Host "❌ Temp output missing"
             $unoptimizable = $true
-            $unoptReason = "Output <1MB"
+            $unoptReason = "Temp output missing"
+            break # Critical error, stop retries
         }
-    } else {
-        Write-Host "❌ Temp output missing"
-        $unoptimizable = $true
-        $unoptReason = "Temp output missing"
     }
 
     # --- Finalize ---
@@ -285,7 +312,9 @@ foreach ($file in $files) {
             Move-Item $tempOutput $finalOutput -Force
             Remove-Item $backup -Force
             Write-Host "✅ Done"
-            Add-Content -Path $logFile -Value "[SUCCESS] $($file.Name) -> Saved ${diffMB}MB (${percent}%)"
+            $logMsg = "[SUCCESS] $($file.Name) -> Saved ${diffMB}MB (${percent}%)"
+            if ($qualityList.Length -gt 1) { $logMsg += " [Quality Used: $successfulQuality]" }
+            Add-Content -Path $logFile -Value $logMsg
             $processedCount++
         } catch {
             Write-Host "❌ Replacement failed -> restoring original"

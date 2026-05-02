@@ -13,6 +13,7 @@ Designed to reduce file size while preserving quality — with **built-in valida
 - 🚀 **Hardware Acceleration Support** for NVIDIA (NVENC), AMD (AMF), and Intel (QSV), as well as CPU encoding.
 - 📂 **Recursive Directory Scanning** to process nested folders.
 - ⚙️ **Configurable Settings** including quality control (CRF, CQ, QP, etc.), presets, audio handling (Copy vs. AAC 128k), and output containers (Original, MKV, MP4).
+- 🔄 **Multi-Pass Quality Fallback** allows providing up to 3 quality values (e.g., `23,27,30`). If the first setting results in a file larger than the source, the script automatically attempts the next.
 - 📊 Shows size comparison after encoding.
 - 🧠 Skips already efficient codecs (HEVC / AV1).
 - 🔍 Validates output (size + duration check).
@@ -42,6 +43,13 @@ Run the script and use the interactive menu to configure your settings before st
 ```powershell
 .\"Video Optimizer.ps1"
 ```
+
+### Multi-Pass Fallback Example
+In the interactive menu, when prompted for **Quality**, enter a comma-separated list of values (up to 3):
+```text
+Enter new quality value or up to 3 comma-separated values (e.g., 23,27,30): 23,26,28
+```
+This tells the script to encode at quality `23` first. If the output is larger than the original video, it cleans up and attempts `26`, and finally `28` if necessary.
 
 ---
 
