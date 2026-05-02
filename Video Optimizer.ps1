@@ -1,3 +1,7 @@
+# MIT License
+# Copyright (c) 2026 Bishnu Mahali
+# See LICENSE file in the repository root for full license text.
+
 # --- Force CQ input ---
 do {
     $cq = Read-Host "Enter CQ value (required, recommended 23–30)"
