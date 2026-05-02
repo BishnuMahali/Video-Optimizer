@@ -1,23 +1,25 @@
-# 🎬 Video Optimizer (HEVC - PowerShell)
+# 🎬 Ultimate Video Optimizer (PowerShell)
 
-A **safe and automated video optimization script** using FFmpeg + NVIDIA NVENC to convert videos into **efficient HEVC (H.265)** format.
+A **safe, automated, and interactive video optimization script** using FFmpeg to convert videos into **efficient HEVC (H.265) or AV1** formats.
 
-Designed to reduce file size while preserving quality — with **built-in validation and safety checks**.
+Designed to reduce file size while preserving quality — with **built-in validation, safety checks, and an interactive menu**.
 
 ---
 
 ## ✨ Features
 
-- 🎯 Converts videos to **HEVC (H.265)** using GPU acceleration (NVENC)
-- ⚙️ **User-defined CQ value** (quality control)
-- 🚀 Uses **CUDA hardware acceleration**
-- 📊 Shows size comparison after encoding
-- 🧠 Skips already efficient codecs (HEVC / AV1)
-- 🔍 Validates output (size + duration check)
-- 🔁 **Safe replacement system** (with backup)
-- 🚫 Detects failed or inefficient conversions
-- 📁 Moves problematic files to **`Unoptimizable/`**
-- 🧼 Cleans up temp files automatically
+- 🎯 Converts videos to **HEVC (H.265)** or **AV1**.
+- 🎛️ **Interactive Menu** to configure settings on the fly.
+- 🚀 **Hardware Acceleration Support** for NVIDIA (NVENC), AMD (AMF), and Intel (QSV), as well as CPU encoding.
+- 📂 **Recursive Directory Scanning** to process nested folders.
+- ⚙️ **Configurable Settings** including quality control (CRF, CQ, QP, etc.), presets, audio handling (Copy vs. AAC 128k), and output containers (Original, MKV, MP4).
+- 📊 Shows size comparison after encoding.
+- 🧠 Skips already efficient codecs (HEVC / AV1).
+- 🔍 Validates output (size + duration check).
+- 🔁 **Safe replacement system** (with backup).
+- 🚫 Detects failed or inefficient conversions.
+- 📁 Moves problematic files to **`Unoptimizable/`**.
+- 🧼 Cleans up temp files automatically.
 
 ---
 
@@ -27,7 +29,7 @@ Designed to reduce file size while preserving quality — with **built-in valida
 - FFmpeg with:
   - `ffmpeg`
   - `ffprobe`
-- NVIDIA GPU (for `hevc_nvenc`)
+- For hardware acceleration: A supported NVIDIA, AMD, or Intel GPU.
 
 👉 Download FFmpeg: https://ffmpeg.org/download.html
 
@@ -35,10 +37,11 @@ Designed to reduce file size while preserving quality — with **built-in valida
 
 ## 📦 Usage
 
-Place the script in your video folder and run:
+Run the script and use the interactive menu to configure your settings before starting the optimization process:
 
 ```powershell
-.\script.ps1```
+.\"Video Optimizer.ps1"
+```
 
 ---
 
