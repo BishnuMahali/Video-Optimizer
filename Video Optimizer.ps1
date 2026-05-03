@@ -226,21 +226,47 @@ foreach ($file in $files) {
         & ffmpeg @ffArgs
 
         $ffmpegExit = $global:LASTEXITCODE
-        Start-Sleep -Milliseconds 500
 
         $unoptimizable = $false
         $unoptReason = ""
 
+        # --- Wait for temp file to appear and stabilize ---
+        $maxWaitMs = 5000
+        $intervalMs = 200
+        $elapsed = 0
+        $fileReady = $false
+
+        while ($elapsed -lt $maxWaitMs) {
+            if (Test-Path -LiteralPath $tempOutput) {
+                try {
+                    $size1 = (Get-Item -LiteralPath $tempOutput).Length
+                    Start-Sleep -Milliseconds 200
+                    $size2 = (Get-Item -LiteralPath $tempOutput).Length
+
+                    # If size is stable, assume write is complete
+                    if ($size1 -eq $size2 -and $size1 -gt 0) {
+                        $fileReady = $true
+                        break
+                    }
+                } catch {
+                    # File might still be locked, ignore and retry
+                }
+            }
+
+            Start-Sleep -Milliseconds $intervalMs
+            $elapsed += $intervalMs
+        }
+
         if ($ffmpegExit -ne 0) {
             Write-Host "❌ FFmpeg error (exit $ffmpegExit)"
-            if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+            if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
             $unoptimizable = $true
             $unoptReason = "FFmpeg error ($ffmpegExit)"
             break # No point in retrying on hard FFmpeg error
         }
-        elseif (Test-Path $tempOutput) {
-            $outSize = (Get-Item $tempOutput).Length
-            $inSize  = (Get-Item $input).Length
+        elseif ($fileReady) {
+            $outSize = (Get-Item -LiteralPath $tempOutput).Length
+            $inSize  = (Get-Item -LiteralPath $input).Length
 
             $inMB   = [math]::Round($inSize  / 1MB, 2)
             $outMB  = [math]::Round($outSize / 1MB, 2)
@@ -272,7 +298,7 @@ foreach ($file in $files) {
                             $unoptReason = "Output larger than source"
                             if ($i -lt ($qualityList.Length - 1)) {
                                 Write-Host "🔄 Falling back to next quality setting..." -ForegroundColor Yellow
-                                if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+                                if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
                                 continue
                             } else {
                                 break # Failed on last pass
@@ -297,9 +323,9 @@ foreach ($file in $files) {
                 break # Critical error, stop retries
             }
         } else {
-            Write-Host "❌ Temp output missing"
+            Write-Host "❌ Temp output missing or not ready (timeout)"
             $unoptimizable = $true
-            $unoptReason = "Temp output missing"
+            $unoptReason = "Temp output missing or timeout"
             break # Critical error, stop retries
         }
     }
@@ -309,8 +335,8 @@ foreach ($file in $files) {
         Write-Host "🔁 Replacing safely..."
         try {
             Rename-Item -LiteralPath $input -NewName ([System.IO.Path]::GetFileName($backup)) -Force
-            Move-Item $tempOutput $finalOutput -Force
-            Remove-Item $backup -Force
+            Move-Item -LiteralPath $tempOutput -Destination $finalOutput -Force
+            Remove-Item -LiteralPath $backup -Force
             Write-Host "✅ Done"
             $logMsg = "[SUCCESS] $($file.Name) -> Saved ${diffMB}MB (${percent}%)"
             if ($qualityList.Length -gt 1) { $logMsg += " [Quality Used: $successfulQuality]" }
@@ -318,21 +344,21 @@ foreach ($file in $files) {
             $processedCount++
         } catch {
             Write-Host "❌ Replacement failed -> restoring original"
-            if (Test-Path $backup) { Rename-Item $backup $file.Name -Force }
-            if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+            if (Test-Path -LiteralPath $backup) { Rename-Item -LiteralPath $backup -NewName $file.Name -Force }
+            if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
             Add-Content -Path $logFile -Value "[ERROR] $($file.Name) -> Replacement failed"
             $failedCount++
         }
     }
     elseif ($unoptimizable) {
-        if (Test-Path $tempOutput) { Remove-Item $tempOutput -Force }
+        if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
 
-        $unoptDir = Join-Path $dir "Unoptimizable"
-        if (-not (Test-Path $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
+        $unoptDir = Join-Path -Path $dir -ChildPath "Unoptimizable"
+        if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
 
-        $unoptDest = Join-Path $unoptDir $file.Name
-        if (-not (Test-Path $unoptDest)) {
-            Move-Item $input $unoptDest -Force
+        $unoptDest = Join-Path -Path $unoptDir -ChildPath $file.Name
+        if (-not (Test-Path -LiteralPath $unoptDest)) {
+            Move-Item -LiteralPath $input -Destination $unoptDest -Force
             Write-Host "📁 Moved to Unoptimizable ($unoptReason)"
             Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Moved to Unoptimizable folder ($unoptReason)"
         } else {
