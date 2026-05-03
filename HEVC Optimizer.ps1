@@ -67,16 +67,42 @@ Get-ChildItem -File | ForEach-Object {
         "$tempOutput"
 
     $ffmpegExit = $global:LASTEXITCODE
-    Start-Sleep -Milliseconds 500
 
     $success      = $false
     $unoptimizable = $false
     $unoptReason  = ""
 
+    # --- Wait for temp file to appear and stabilize ---
+    $maxWaitMs = 5000
+    $intervalMs = 200
+    $elapsed = 0
+    $fileReady = $false
+
+    while ($elapsed -lt $maxWaitMs) {
+        if (Test-Path -LiteralPath $tempOutput) {
+            try {
+                $size1 = (Get-Item -LiteralPath $tempOutput).Length
+                Start-Sleep -Milliseconds 200
+                $size2 = (Get-Item -LiteralPath $tempOutput).Length
+
+                # If size is stable, assume write is complete
+                if ($size1 -eq $size2 -and $size1 -gt 0) {
+                    $fileReady = $true
+                    break
+                }
+            } catch {
+                # File might still be locked, ignore and retry
+            }
+        }
+
+        Start-Sleep -Milliseconds $intervalMs
+        $elapsed += $intervalMs
+    }
+
     # --- FFmpeg itself failed — flag immediately, skip validation ---
     if ($ffmpegExit -ne 0) {
         Write-Host "❌ FFmpeg error (exit $ffmpegExit) → flagging for Unoptimizable"
-        if (Test-Path -LiteralPath $tempOutput) { Remove-Item $tempOutput -Force }
+        if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
         if ($codec -match "h264|avc") {
             $unoptimizable = $true
             $unoptReason   = "FFmpeg encode error (exit $ffmpegExit)"
@@ -84,7 +110,7 @@ Get-ChildItem -File | ForEach-Object {
     }
 
     # --- Validation (only runs when ffmpeg reported success) ---
-    elseif (Test-Path -LiteralPath $tempOutput) {
+    elseif ($fileReady) {
 
         $outSize = (Get-Item -LiteralPath $tempOutput).Length
         $inSize  = (Get-Item -LiteralPath $input).Length
@@ -147,10 +173,10 @@ Get-ChildItem -File | ForEach-Object {
         }
 
     } else {
-        Write-Host "❌ Temp output missing → flagging for Unoptimizable"
+        Write-Host "❌ Temp output missing or not ready (timeout) → flagging for Unoptimizable"
         if ($codec -match "h264|avc") {
             $unoptimizable = $true
-            $unoptReason   = "Temp output file never created"
+            $unoptReason   = "Temp output file missing or timeout"
         }
     }
 
@@ -160,7 +186,7 @@ Get-ChildItem -File | ForEach-Object {
         Write-Host "🔁 Replacing safely..."
 
         try {
-            Rename-Item -LiteralPath $input -NewName $backup -Force
+            Rename-Item -LiteralPath $input -NewName ([System.IO.Path]::GetFileName($backup)) -Force
             Move-Item -LiteralPath $tempOutput -Destination $finalOutput -Force
             Remove-Item -LiteralPath $backup -Force
 
@@ -169,12 +195,12 @@ Get-ChildItem -File | ForEach-Object {
         catch {
             Write-Host "❌ Replacement failed → restoring original"
 
-            if (Test-Path $backup) {
-                Rename-Item $backup $input -Force
+            if (Test-Path -LiteralPath $backup) {
+                Rename-Item -LiteralPath $backup -NewName $input -Force
             }
 
-            if (Test-Path $tempOutput) {
-                Remove-Item $tempOutput -Force
+            if (Test-Path -LiteralPath $tempOutput) {
+                Remove-Item -LiteralPath $tempOutput -Force
             }
         }
     }
@@ -186,13 +212,13 @@ Get-ChildItem -File | ForEach-Object {
 
         Write-Host "📁 Moving to Unoptimizable ($unoptReason)..."
 
-        $unoptDir = Join-Path $dir "Unoptimizable"
+        $unoptDir = Join-Path -Path $dir -ChildPath "Unoptimizable"
 
         if (-not (Test-Path -LiteralPath $unoptDir)) {
             New-Item -ItemType Directory -Path $unoptDir | Out-Null
         }
 
-        $unoptDest = Join-Path $unoptDir $_.Name
+        $unoptDest = Join-Path -Path $unoptDir -ChildPath $_.Name
 
         if (Test-Path -LiteralPath $unoptDest) {
             Write-Host "⚠️ File already exists in Unoptimizable → skipping move to avoid overwrite"
@@ -209,7 +235,7 @@ Get-ChildItem -File | ForEach-Object {
     }
     else {
         if (Test-Path -LiteralPath $tempOutput) {
-            Remove-Item $tempOutput -Force
+            Remove-Item -LiteralPath $tempOutput -Force
         }
 
         Write-Host "❌ Kept original"
