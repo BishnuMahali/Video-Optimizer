@@ -9,17 +9,17 @@ Designed to reduce file size while preserving quality — with **built-in valida
 ## ✨ Features
 
 - 🎯 Converts videos to **HEVC (H.265)** or **AV1**.
-- 🎛️ **Interactive Menu** to configure settings on the fly.
-- 🚀 **Hardware Acceleration Support** for NVIDIA (NVENC), AMD (AMF), and Intel (QSV), as well as CPU encoding.
+- 🎛️ **Interactive Menu** to configure settings on the fly: Target Folder, Recursive Mode, Encoder, Quality, Preset, Audio Action, Container, and Failed Action.
+- 🚀 **Hardware Acceleration Support** for NVIDIA (NVENC), AMD (AMF), Intel (QSV), and CPU (AV1 SVT, HEVC libx265).
 - 📂 **Recursive Directory Scanning** to process nested folders.
-- ⚙️ **Configurable Settings** including quality control (CRF, CQ, QP, etc.), presets, audio handling (Copy vs. AAC 128k), and output containers (Original, MKV, MP4).
+- ⚙️ **Configurable Settings** including quality control (CRF, CQ, QP, etc.), presets, audio handling with smart MP4/MOV compatibility validation and automatic AAC fallback, and output containers (Original, MKV, MP4, MOV).
 - 🔄 **Multi-Pass Quality Fallback** allows providing up to 3 quality values (e.g., `23,27,30`). If the first setting results in a file larger than the source, the script automatically attempts the next.
 - 📊 Shows size comparison after encoding.
 - 🧠 Skips already efficient codecs (HEVC / AV1).
 - 🔍 Validates output (size + duration check).
 - 🔁 **Safe replacement system** (with backup).
 - 🚫 Detects failed or inefficient conversions.
-- 📁 Moves problematic files to **`Unoptimizable/`**.
+- 📁 **Configurable Failed Actions**: Choose to Move to 'Unoptimizable', Move to a Custom Folder, Delete the File, or Ignore (Keep Original).
 - 🧼 Cleans up temp files automatically.
 
 ---
