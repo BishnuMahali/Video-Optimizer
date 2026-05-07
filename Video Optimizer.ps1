@@ -14,12 +14,26 @@ $availableEncoders = @(
     @{ ID = "8"; Name = "HEVC (CPU - libx265)"; Codec = "libx265"; Mode = "crf"; Supported = $true; Rank = 8 }
 )
 
-Write-Host "Detecting hardware encoders..."
+Write-Host "Detecting hardware capabilities... (This may take a moment)" -ForegroundColor Gray
 $ffmpegEncoders = (ffmpeg -encoders 2>&1 | Out-String)
 
 foreach ($enc in $availableEncoders) {
-    if ($ffmpegEncoders -match "\b$($enc.Codec)\b") {
+    if ($enc.Codec -match "libsvtav1|libx265") {
+        # CPU encoders are always supported if ffmpeg is present
         $enc.Supported = $true
+        continue
+    }
+
+    if ($ffmpegEncoders -match "\b$($enc.Codec)\b") {
+        # FFmpeg binary supports the codec, but does the hardware?
+        # Run a 1-frame dummy encode to verify actual GPU support.
+        $dummyArgs = @("-v", "error", "-f", "lavfi", "-i", "color=black:s=128x128:r=1", "-vframes", "1", "-c:v", $enc.Codec, "-f", "null", "-")
+        $global:LASTEXITCODE = 0
+        $null = & ffmpeg @dummyArgs 2>&1
+        
+        if ($global:LASTEXITCODE -eq 0) {
+            $enc.Supported = $true
+        }
     }
 }
 
