@@ -294,8 +294,10 @@ $files = if ($recursive) { Get-ChildItem -Path $targetFolder -File -Recurse } el
 $qualityList = $quality -split ','
 $totalFiles = $files.Count
 $currentFileIndex = 0
+$global:currentTempOutput = ""
 
-foreach ($file in $files) {
+try {
+    foreach ($file in $files) {
     $currentFileIndex++
     if ($file.FullName -eq $logFile) { continue }
     if ($file.Name -match "_backup") { continue }
@@ -428,6 +430,7 @@ foreach ($file in $files) {
         $ffArgs += @($tempOutput)
 
         # --- Run ---
+        $global:currentTempOutput = $tempOutput
         $global:LASTEXITCODE = 0
         & ffmpeg @ffArgs
 
@@ -532,6 +535,7 @@ foreach ($file in $files) {
             Rename-Item -LiteralPath $input -NewName ([System.IO.Path]::GetFileName($backup)) -Force
             Move-Item -LiteralPath $tempOutput -Destination $finalOutput -Force
             Remove-Item -LiteralPath $backup -Force
+            $global:currentTempOutput = ""
             $logMsg = "[SUCCESS] $($file.Name) -> Saved ${diffMB}MB (${percent}%)"
             if ($qualityList.Length -gt 1) { $logMsg += " [Quality: $successfulQuality]" }
             Add-Content -Path $logFile -Value $logMsg
@@ -590,6 +594,11 @@ foreach ($file in $files) {
     else {
         Add-Content -Path $logFile -Value "[SKIPPED] $($file.Name)"
         $skippedCount++
+    }
+} finally {
+    if ($global:currentTempOutput -and (Test-Path -LiteralPath $global:currentTempOutput)) {
+        Write-Host "`n[Interrupt] Cleaning up incomplete temp file..." -ForegroundColor Yellow
+        Remove-Item -LiteralPath $global:currentTempOutput -Force
     }
 }
 
