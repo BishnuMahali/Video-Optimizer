@@ -25,7 +25,7 @@ foreach ($enc in $availableEncoders) {
 
 # --- State Variables ---
 $targetFolder = $PWD.Path
-$recursive = $false
+$recursive = $true # Changed to true by default
 
 # Pick best supported encoder by rank
 $defaultEnc = $availableEncoders | Where-Object Supported | Sort-Object Rank | Select-Object -First 1
@@ -36,6 +36,11 @@ $preset = if ($defaultEnc.Codec -match "nvenc") { "p5" } elseif ($defaultEnc.Cod
 
 $audioAction = "AAC 128k"
 $container = "MP4"
+
+# Failed file handling
+$unoptOptions = @("Move to 'Unoptimizable'", "Move to Custom Folder...", "Delete File", "Ignore (Keep Original)")
+$unoptAction = "Move to 'Unoptimizable'"
+$unoptCustomFolder = ""
 
 # --- File Filtering Variables ---
 $knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg', '.rm', '.rmvb', '.3gp', '.3g2', '.ogv', '.mp4v', '.f4v', '.asf', '.divx', '.xvid', '.yuv', '.viv', '.mxf')
@@ -58,18 +63,41 @@ function Write-Status {
     Write-Host $Value -ForegroundColor $ValueColor
 }
 
-function Show-Menu {
+# --- Main Menu Loop (Interactive TUI) ---
+$runningMenu = $true
+$selectedIndex = 0
+$menuCount = 10
+$audioOptions = @("Copy", "AAC 128k", "AAC 192k", "AAC 256k", "Opus 128k", "Opus 192k", "AC3 384k", "AC3 640k")
+$containerOptions = @("MP4", "MKV", "MOV", "Original")
+
+while ($runningMenu) {
     Clear-Host
-    $activeEnc = ($availableEncoders | Where-Object ID -eq $selectedEncoderId)
-    
     Write-BoxHeader "ULTIMATE VIDEO OPTIMIZER" "Cyan"
     Write-Host ""
-    
-    Write-Status "1" "Target Folder : $targetFolder"
-    Write-Status "2" "Recursive     : $($recursive ? 'Yes' : 'No')"
-    Write-Status "3" "Encoder       : $($activeEnc.Name) ($($activeEnc.Codec))"
-    
-    # Contextual Quality Hint
+
+    $activeEnc = ($availableEncoders | Where-Object ID -eq $selectedEncoderId)
+
+    function Draw-MenuItem {
+        param($Index, $Label, $Value, $Hint = "")
+        $prefix = if ($selectedIndex -eq $Index) { " >" } else { "  " }
+        $color = if ($selectedIndex -eq $Index) { "Cyan" } else { "Gray" }
+        $valColor = if ($selectedIndex -eq $Index) { "White" } else { "DarkGray" }
+
+        Write-Host "$prefix [$($Index+1)] $Label " -NoNewline -ForegroundColor $color
+        $pad = 18 - $Label.Length
+        if ($pad -gt 0) { Write-Host (" " * $pad) -NoNewline }
+        Write-Host ": " -NoNewline -ForegroundColor $color
+        Write-Host $Value -ForegroundColor $valColor
+
+        if ($Hint) {
+            Write-Host "        └─ $Hint" -ForegroundColor DarkGray
+        }
+    }
+
+    Draw-MenuItem 0 "Target Folder" $targetFolder
+    Draw-MenuItem 1 "Recursive" ($recursive ? 'Yes' : 'No')
+    Draw-MenuItem 2 "Encoder" "$($activeEnc.Name) ($($activeEnc.Codec))"
+
     $qHint = switch -regex ($activeEnc.Codec) {
         "nvenc" { "Recommended: 23,26,29 (CQ)" }
         "qsv"   { "Recommended: 23,26,29 (Global Quality)" }
@@ -78,88 +106,147 @@ function Show-Menu {
         "libx265"   { "Recommended: 24,28,32 (CRF)" }
         Default { "Recommended: 23-30" }
     }
-    Write-Status "4" "Quality ($($activeEnc.Mode)) : $quality"
-    Write-Host "     └─ $qHint" -ForegroundColor DarkGray
-    
-    # Contextual Preset Hint
+    Draw-MenuItem 3 "Quality" $quality $qHint
+
     $pHint = switch -regex ($activeEnc.Codec) {
         "nvenc" { "Options: p1 to p7 (p5=default, p7=slowest)" }
         "libsvtav1" { "Options: 0 to 13 (6=balanced, 4=higher quality)" }
         "libx265"   { "Options: ultrafast to placebo (slow=recommended)" }
         Default { "Enter encoder-specific preset" }
     }
-    Write-Status "5" "Preset        : $(if($preset){$preset}else{'None'})"
-    Write-Host "     └─ $pHint" -ForegroundColor DarkGray
-    
-    Write-Status "6" "Audio Action  : $audioAction"
-    Write-Status "7" "Container     : $container"
+    Draw-MenuItem 4 "Preset" $(if($preset){$preset}else{'None'}) $pHint
+
+    Draw-MenuItem 5 "Audio Action" $audioAction
+    Draw-MenuItem 6 "Container" $container
+
+    $unoptDisplay = if ($unoptAction -match "Custom" -and $unoptCustomFolder) {
+        "Custom ($unoptCustomFolder)"
+    } else {
+        $unoptAction
+    }
+    Draw-MenuItem 7 "Failed Action" $unoptDisplay "What to do if optimization fails or output is larger"
+
     Write-Host ""
-    Write-Host " [S] Start Optimization" -ForegroundColor Green
-    Write-Host " [Q] Quit" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "─────────────────────────────────────────────" -ForegroundColor Gray
-}
+    if ($selectedIndex -eq 8) { Write-Host " > [ Start Optimization ]" -ForegroundColor Green }
+    else { Write-Host "   [ Start Optimization ]" -ForegroundColor DarkGreen }
 
-# --- Main Menu Loop ---
-$runningMenu = $true
-$audioOptions = @("Copy", "AAC 128k", "AAC 192k", "AAC 256k", "Opus 128k", "Opus 192k", "AC3 384k", "AC3 640k")
-$containerOptions = @("MP4", "MKV", "MOV", "Original")
+    if ($selectedIndex -eq 9) { Write-Host " > [ Quit ]" -ForegroundColor Red }
+    else { Write-Host "   [ Quit ]" -ForegroundColor DarkRed }
 
-while ($runningMenu) {
-    Show-Menu
-    $choice = Read-Host "Select an option"
+    Write-Host "`n─────────────────────────────────────────────" -ForegroundColor Gray
+    Write-Host " Navigation : [Up/Down]   Change Value: [Left/Right]" -ForegroundColor Gray
+    Write-Host " Edit/Enter : [Enter]     (Target, Quality, Preset, Custom Folder)" -ForegroundColor Gray
 
-    switch ($choice.ToUpper()) {
-        "1" {
-            $newFolder = Read-Host "Enter new target folder path"
-            if (Test-Path $newFolder) { $targetFolder = (Resolve-Path $newFolder).Path }
-            else { Write-Host "Invalid path!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
-        }
-        "2" {
-            $recursive = -not $recursive
-        }
-        "3" {
-            Write-Host "`nAvailable Encoders (Ordered by modern/hardware preference):"
-            foreach ($enc in ($availableEncoders | Sort-Object Rank)) {
-                $status = if ($enc.Supported) { "[Supported]" } else { "[Not Found]" }
-                Write-Host " $($enc.ID). $($enc.Name) $status"
+    # Wait for key press
+    $key = [Console]::ReadKey($true)
+
+    switch ($key.Key) {
+        "UpArrow" { $selectedIndex = [Math]::Max(0, $selectedIndex - 1) }
+        "DownArrow" { $selectedIndex = [Math]::Min($menuCount - 1, $selectedIndex + 1) }
+        "LeftArrow" {
+            switch ($selectedIndex) {
+                1 { $recursive = -not $recursive }
+                2 {
+                    $supported = @($availableEncoders | Where-Object Supported)
+                    if ($supported.Count -gt 1) {
+                        $idx = [array]::IndexOf($supported.ID, $selectedEncoderId)
+                        $idx = ($idx - 1 + $supported.Count) % $supported.Count
+                        $newEnc = $supported[$idx]
+                        $selectedEncoderId = $newEnc.ID
+                        if ($newEnc.Codec -match "nvenc") { $preset = "p5" }
+                        elseif ($newEnc.Codec -match "libsvtav1") { $preset = "6" }
+                        elseif ($newEnc.Codec -match "qsv|amf") { $preset = "" }
+                        else { $preset = "slow" }
+                    }
+                }
+                5 {
+                    $idx = [array]::IndexOf($audioOptions, $audioAction)
+                    $idx = ($idx - 1 + $audioOptions.Count) % $audioOptions.Count
+                    $audioAction = $audioOptions[$idx]
+                }
+                6 {
+                    $idx = [array]::IndexOf($containerOptions, $container)
+                    $idx = ($idx - 1 + $containerOptions.Count) % $containerOptions.Count
+                    $container = $containerOptions[$idx]
+                }
+                7 {
+                    $idx = [array]::IndexOf($unoptOptions, $unoptAction)
+                    $idx = ($idx - 1 + $unoptOptions.Count) % $unoptOptions.Count
+                    $unoptAction = $unoptOptions[$idx]
+                }
             }
-            $newEncId = Read-Host "Enter encoder ID"
-            $selectedEnc = $availableEncoders | Where-Object ID -eq $newEncId
-            if ($selectedEnc -and $selectedEnc.Supported) {
-                $selectedEncoderId = $newEncId
-                # Reset defaults for this encoder
-                if ($selectedEnc.Codec -match "nvenc") { $preset = "p5" }
-                elseif ($selectedEnc.Codec -match "libsvtav1") { $preset = "6" }
-                elseif ($selectedEnc.Codec -match "qsv|amf") { $preset = "" }
-                else { $preset = "slow" }
-            } else {
-                Write-Host "Invalid or unsupported encoder!" -ForegroundColor Red; Start-Sleep -Seconds 1
+        }
+        "RightArrow" {
+            switch ($selectedIndex) {
+                1 { $recursive = -not $recursive }
+                2 {
+                    $supported = @($availableEncoders | Where-Object Supported)
+                    if ($supported.Count -gt 1) {
+                        $idx = [array]::IndexOf($supported.ID, $selectedEncoderId)
+                        $idx = ($idx + 1) % $supported.Count
+                        $newEnc = $supported[$idx]
+                        $selectedEncoderId = $newEnc.ID
+                        if ($newEnc.Codec -match "nvenc") { $preset = "p5" }
+                        elseif ($newEnc.Codec -match "libsvtav1") { $preset = "6" }
+                        elseif ($newEnc.Codec -match "qsv|amf") { $preset = "" }
+                        else { $preset = "slow" }
+                    }
+                }
+                5 {
+                    $idx = [array]::IndexOf($audioOptions, $audioAction)
+                    $idx = ($idx + 1) % $audioOptions.Count
+                    $audioAction = $audioOptions[$idx]
+                }
+                6 {
+                    $idx = [array]::IndexOf($containerOptions, $container)
+                    $idx = ($idx + 1) % $containerOptions.Count
+                    $container = $containerOptions[$idx]
+                }
+                7 {
+                    $idx = [array]::IndexOf($unoptOptions, $unoptAction)
+                    $idx = ($idx + 1) % $unoptOptions.Count
+                    $unoptAction = $unoptOptions[$idx]
+                }
             }
         }
-        "4" {
-            Write-Host "Smart recommendation: '23,26,29' (Attempts 23 first, falls back to 26, then 29 if output is larger.)" -ForegroundColor Yellow
-            $newQuality = Read-Host "Enter quality value or up to 3 comma-separated values"
-            if ($newQuality -match '^\d+(\s*,\s*\d+){0,2}$') { $quality = $newQuality -replace '\s+', '' }
-            else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
-        }
-        "5" {
-            $preset = Read-Host "Enter preset"
-        }
-        "6" {
-            $idx = [array]::IndexOf($audioOptions, $audioAction)
-            $audioAction = $audioOptions[($idx + 1) % $audioOptions.Count]
-        }
-        "7" {
-            $idx = [array]::IndexOf($containerOptions, $container)
-            $container = $containerOptions[($idx + 1) % $containerOptions.Count]
-        }
-        "S" {
-            $runningMenu = $false
-        }
-        "Q" {
-            Write-Host "Exiting..."
-            return
+        "Enter" {
+            switch ($selectedIndex) {
+                0 {
+                    Write-Host "`n"
+                    $newFolder = Read-Host "Enter new target folder path"
+                    if (Test-Path $newFolder) { $targetFolder = (Resolve-Path $newFolder).Path }
+                    else { Write-Host "Invalid path!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                }
+                1 { $recursive = -not $recursive }
+                3 {
+                    Write-Host "`n"
+                    $newQuality = Read-Host "Enter quality value (e.g. 23,26,29)"
+                    if ($newQuality -match '^\d+(\s*,\s*\d+){0,2}$') { $quality = $newQuality -replace '\s+', '' }
+                    else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                }
+                4 {
+                    Write-Host "`n"
+                    $newPreset = Read-Host "Enter preset"
+                    $preset = $newPreset
+                }
+                7 {
+                    if ($unoptAction -match "Custom") {
+                        Write-Host "`n"
+                        $newFolder = Read-Host "Enter custom folder path for failed files"
+                        if ($newFolder) {
+                            if (-not (Test-Path $newFolder)) {
+                                New-Item -ItemType Directory -Path $newFolder | Out-Null
+                            }
+                            $unoptCustomFolder = (Resolve-Path $newFolder).Path
+                        }
+                    }
+                }
+                8 { $runningMenu = $false }
+                9 { 
+                    Write-Host "`nExiting..."
+                    return 
+                }
+            }
         }
     }
 }
@@ -445,15 +532,44 @@ foreach ($file in $files) {
     }
     elseif ($unoptimizable) {
         if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
-        $unoptDir = Join-Path -Path $dir -ChildPath "Unoptimizable"
-        if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
-        $unoptDest = Join-Path -Path $unoptDir -ChildPath $file.Name
-        if (-not (Test-Path -LiteralPath $unoptDest)) {
-            Move-Item -LiteralPath $input -Destination $unoptDest -Force
-            Write-Host "     📁 Moved to Unoptimizable" -ForegroundColor Gray
-            Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> $unoptReason"
-        } else {
-            Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Already exists in Unoptimizable"
+
+        switch ($unoptAction) {
+            "Move to 'Unoptimizable'" {
+                $unoptDir = Join-Path -Path $dir -ChildPath "Unoptimizable"
+                if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
+                $unoptDest = Join-Path -Path $unoptDir -ChildPath $file.Name
+                if (-not (Test-Path -LiteralPath $unoptDest)) {
+                    Move-Item -LiteralPath $input -Destination $unoptDest -Force
+                    Write-Host "     📁 Moved to Unoptimizable" -ForegroundColor Gray
+                    Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Moved to Unoptimizable folder ($unoptReason)"
+                } else {
+                    Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Already exists in Unoptimizable"
+                }
+            }
+            "Move to Custom Folder..." {
+                if ($unoptCustomFolder -and (Test-Path $unoptCustomFolder)) {
+                    $unoptDest = Join-Path -Path $unoptCustomFolder -ChildPath $file.Name
+                    if (-not (Test-Path -LiteralPath $unoptDest)) {
+                        Move-Item -LiteralPath $input -Destination $unoptDest -Force
+                        Write-Host "     📁 Moved to Custom Folder" -ForegroundColor Gray
+                        Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Moved to custom folder ($unoptReason)"
+                    } else {
+                        Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Already exists in custom folder"
+                    }
+                } else {
+                    Write-Host "     ⚠️  Custom folder invalid. Kept original." -ForegroundColor Yellow
+                    Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Custom folder invalid. Kept original."
+                }
+            }
+            "Delete File" {
+                Remove-Item -LiteralPath $input -Force
+                Write-Host "     🗑️  Deleted original file" -ForegroundColor Red
+                Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Deleted original file ($unoptReason)"
+            }
+            "Ignore (Keep Original)" {
+                Write-Host "     ⏭️  Ignored (Kept original)" -ForegroundColor Gray
+                Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) -> Ignored ($unoptReason)"
+            }
         }
         $failedCount++
     }
