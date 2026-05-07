@@ -46,7 +46,7 @@ function Show-Menu {
     Write-Host "=============================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host " [1] Target Folder : $targetFolder"
-    Write-Host " [2] Recursive     : $($recursive ? 'Yes' : 'No')"
+    Write-Host " [2] Recursive (Include Subfolders)    : $($recursive ? 'Yes' : 'No')"
     $activeEnc = ($availableEncoders | Where-Object ID -eq $selectedEncoderId)
     Write-Host " [3] Encoder       : $($activeEnc.Name) ($($activeEnc.Codec))"
     Write-Host " [4] Quality ($($activeEnc.Mode)) : $quality"
