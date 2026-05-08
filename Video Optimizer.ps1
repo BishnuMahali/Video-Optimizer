@@ -1,5 +1,5 @@
 ﻿# Ultimate Video Optimizer
-# Version: 1.0.2
+# Version: 1.1.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.
@@ -120,6 +120,52 @@ function Write-Status {
     param([string]$Label, [string]$Value, [string]$LabelColor = "Gray", [string]$ValueColor = "White")
     Write-Host " [$Label] " -ForegroundColor $LabelColor -NoNewline
     Write-Host $Value -ForegroundColor $ValueColor
+}
+
+function Get-FileCacheKey {
+    param([string]$Path)
+    return $Path.ToLowerInvariant()
+}
+
+function Get-FileSignature {
+    param($File)
+    return "$($File.Length)|$($File.LastWriteTimeUtc.Ticks)"
+}
+
+function Get-OptimizationSettingsKey {
+    param(
+        [string]$VideoCodec,
+        [string]$Mode,
+        [string]$Quality,
+        [string]$Preset,
+        [string]$AudioAction,
+        [string]$Container
+    )
+
+    $normalizedQuality = (($Quality -split ',') | ForEach-Object { $_.Trim() }) -join ','
+    return "codec=$VideoCodec|mode=$Mode|quality=$normalizedQuality|preset=$Preset|audio=$AudioAction|container=$Container"
+}
+
+function Save-UnoptimizableCache {
+    param(
+        [string]$CacheFile,
+        [hashtable]$Cache,
+        [string]$Path,
+        [string]$Signature,
+        [string]$SettingsKey,
+        [string]$Reason
+    )
+
+    $key = Get-FileCacheKey $Path
+    $Cache[$key] = [ordered]@{
+        Path = $Path
+        Signature = $Signature
+        SettingsKey = $SettingsKey
+        Reason = $Reason
+        LastTried = (Get-Date).ToString("o")
+    }
+
+    $Cache.Values | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
 }
 
 # --- Preset Options ---
@@ -374,9 +420,26 @@ if (-not (Test-Path -LiteralPath $targetFolder -PathType Container)) {
 }
 
 $logFile = Join-Path $targetFolder "Optimization_Log.txt"
+$cacheFile = Join-Path $targetFolder "Optimization_Cache.json"
 Add-Content -Path $logFile -Value "`n========================================"
 Add-Content -Path $logFile -Value "Optimization Session Started: $(Get-Date)"
 Add-Content -Path $logFile -Value "Encoder: $videoCodec, Quality: $quality, Preset: $preset"
+
+$currentSettingsKey = Get-OptimizationSettingsKey -VideoCodec $videoCodec -Mode $mode -Quality $quality -Preset $preset -AudioAction $audioAction -Container $container
+$unoptimizableCache = @{}
+if (Test-Path -LiteralPath $cacheFile) {
+    try {
+        $cachedItems = @(Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json)
+        foreach ($item in $cachedItems) {
+            if ($item.Path) {
+                $unoptimizableCache[(Get-FileCacheKey $item.Path)] = $item
+            }
+        }
+    } catch {
+        Write-Host " [WARNING] Could not read optimization cache. Continuing without cached skips." -ForegroundColor Yellow
+        $unoptimizableCache = @{}
+    }
+}
 
 $totalInBytes = 0
 $totalOutBytes = 0
@@ -409,6 +472,7 @@ if ($totalFiles -eq 0) {
         foreach ($file in $files) {
             $currentFileIndex++
             if ($file.FullName -eq $logFile) { continue }
+            if ($file.FullName -eq $cacheFile) { continue }
             if ($file.Name -match "_backup") { continue }
             if ($file.DirectoryName -match "Unoptimizable") { continue }
 
@@ -453,6 +517,16 @@ if ($totalFiles -eq 0) {
 
             if ($vCodec -match "hevc|av1") {
                 Write-Host "  $($S.Bullet) Skipped (already efficient: $vCodec)" -ForegroundColor Gray
+                $skippedCount++
+                continue
+            }
+
+            $fileCacheKey = Get-FileCacheKey $input
+            $fileSignature = Get-FileSignature $file
+            $cachedAttempt = $unoptimizableCache[$fileCacheKey]
+            if ($cachedAttempt -and $cachedAttempt.Signature -eq $fileSignature -and $cachedAttempt.SettingsKey -eq $currentSettingsKey) {
+                Write-Host "  $($S.Bullet) Skipped (already failed with same settings: $($cachedAttempt.Reason))" -ForegroundColor Yellow
+                Add-Content -Path $logFile -Value "[SKIPPED-CACHED] $($file.Name) ($($cachedAttempt.Reason))"
                 $skippedCount++
                 continue
             }
@@ -608,6 +682,9 @@ if ($totalFiles -eq 0) {
                 }
                 $failedCount++
                 Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) ($unoptReason)"
+                if ($unoptAction -eq "Ignore (Keep Original)" -and (Test-Path -LiteralPath $input)) {
+                    Save-UnoptimizableCache -CacheFile $cacheFile -Cache $unoptimizableCache -Path $input -Signature $fileSignature -SettingsKey $currentSettingsKey -Reason $unoptReason
+                }
             } else { $skippedCount++ }
         }
     } finally {

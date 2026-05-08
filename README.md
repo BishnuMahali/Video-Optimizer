@@ -14,6 +14,7 @@ Designed to reduce file size while preserving quality — with **built-in valida
 - 📂 **Recursive Directory Scanning** to process nested folders.
 - ⚙️ **Configurable Settings** including quality control (CRF, CQ, QP, etc.), presets, audio handling with smart MP4/MOV compatibility validation and automatic AAC fallback, and output containers (Original, MKV, MP4, MOV).
 - 🔄 **Multi-Pass Quality Fallback** allows providing up to 3 quality values (e.g., `23,27,30`). If the first setting results in a file larger than the source, the script automatically attempts the next.
+- 🧾 **Unoptimizable Cache** remembers files kept in place after failed attempts and skips retrying them when the encoder settings have not changed.
 - 📊 Shows size comparison after encoding.
 - 🧠 Skips already efficient codecs (HEVC / AV1).
 - 🔍 Validates output (size + duration check).
@@ -38,11 +39,17 @@ Designed to reduce file size while preserving quality — with **built-in valida
 
 ## 📦 Usage
 
-Run the script and use the interactive menu to configure your settings before starting the optimization process:
+Double-click `Video Optimizer.bat` to launch the optimizer with the newest PowerShell available on your system. The launcher prefers PowerShell 7+ (`pwsh.exe`) when installed and falls back to Windows PowerShell.
+
+You can also run the script directly and use the interactive menu to configure your settings before starting the optimization process:
 
 ```powershell
 .\"Video Optimizer.ps1"
 ```
+
+### Failed File Cache
+
+When **Failed Action** is set to **Ignore (Keep Original)**, the script writes `Optimization_Cache.json` in the selected target folder. If the same file is scanned again with the same encoder, quality, preset, audio, and container settings, it is skipped instead of being reprocessed. Changing those settings, or modifying the file, allows it to be tried again.
 
 ### Multi-Pass Fallback Example
 In the interactive menu, when prompted for **Quality**, enter a comma-separated list of values (up to 3):
