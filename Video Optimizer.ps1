@@ -88,65 +88,22 @@ $unoptCustomFolder = ""
 
 # --- File Filtering Variables ---
 $knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg', '.rm', '.rmvb', '.3gp', '.3g2', '.ogv', '.mp4v', '.f4v', '.asf', '.divx', '.xvid', '.yuv', '.viv', '.mxf')
-$knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp')
-$failedExtensions = @() # Track extensions that consistently fail in this session
+$knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.cfa', '.pek', '.ffx', '.prfpset', '.ds_store', '.setting', '.drp', '.cube', '.url', '.drfx', '.ttf', '.otf', '.eot', '.woff', '.woff2', '.fon', '.ttc', '.compositefont', '.dat', '.htm', '.eps', '.jfif', '.avif', '.sfk', '.mogrt', '.prproj', '.aep', '.aegraphic', '.aif', '.atn', '.abr', '.grd', '.pat', '.asl', '.settings', '.zxp', '.rtf', '.plp', '.apk', '.docx', '.atom')
 
 # Tracking for session findings
 $sessionNewVideos = @()
 $sessionNewIgnored = @()
 
 # --- UI Setup ---
-if ($PSVersionTable.PSVersion.Major -lt 6) {
-    # Attempt to enable UTF8 for PS 5.1
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-}
-
-$isModernTerminal = $env:WT_SESSION -or $env:TERM_PROGRAM -eq "vscode" -or $env:TERM -eq "xterm-256color"
-
-$S = if ($isModernTerminal) {
-    @{
-        Success = "✅"
-        Error   = "❌"
-        Warning = "⚠️ "
-        Info    = "ℹ️ "
-        Scan    = "🔍"
-        Video   = "🎬"
-        Folder  = "📁"
-        Config  = "⚙️ "
-        Arrow   = "❯"
-        Bullet  = "•"
-        Separator = "─"
-        BoxTL = "╭"
-        BoxTR = "╮"
-        BoxBL = "╰"
-        BoxBR = "╯"
-        BoxH = "─"
-        BoxV = "│"
-        Save  = "💾"
-        Skip  = "⏭️ "
-    }
-} else {
-    @{
-        Success = "[OK]"
-        Error   = "[ERR]"
-        Warning = "[WRN]"
-        Info    = "[INF]"
-        Scan    = "[SCN]"
-        Video   = "[VID]"
-        Folder  = "[DIR]"
-        Config  = "[CFG]"
-        Arrow   = ">"
-        Bullet  = "-"
-        Separator = "-"
-        BoxTL = "+"
-        BoxTR = "+"
-        BoxBL = "+"
-        BoxBR = "+"
-        BoxH = "-"
-        BoxV = "|"
-        Save  = "[SAVE]"
-        Skip  = "[SKIP]"
-    }
+$S = @{
+    Arrow   = ">"
+    Bullet  = "L-"
+    BoxTL = "+"
+    BoxTR = "+"
+    BoxBL = "+"
+    BoxBR = "+"
+    BoxH = "-"
+    BoxV = "|"
 }
 
 # --- UI Helper Functions ---
@@ -161,7 +118,7 @@ function Write-BoxHeader {
 
 function Write-Status {
     param([string]$Label, [string]$Value, [string]$LabelColor = "Gray", [string]$ValueColor = "White")
-    Write-Host " $($S.Bullet) [$Label] " -ForegroundColor $LabelColor -NoNewline
+    Write-Host " [$Label] " -ForegroundColor $LabelColor -NoNewline
     Write-Host $Value -ForegroundColor $ValueColor
 }
 
@@ -465,22 +422,16 @@ if ($totalFiles -eq 0) {
 
             # --- Fast Extension-based filtering ---
             if ($knownIgnoredExtensions -contains $fileExt) {
-                Write-Host "  $($S.Skip) Skipped (ignored extension)" -ForegroundColor Gray
-                $skippedCount++
-                continue
-            }
-
-            if ($failedExtensions -contains $fileExt) {
-                Write-Host "  $($S.Skip) Skipped (consistently unoptimizable format)" -ForegroundColor Gray
+                Write-Host "  $($S.Bullet) Skipped (ignored extension)" -ForegroundColor Gray
                 $skippedCount++
                 continue
             }
 
             if ($knownVideoExtensions -notcontains $fileExt) {
-                Write-Host "  $($S.Scan) Verifying format..." -ForegroundColor Gray
+                Write-Host "  $($S.Bullet) Verifying format..." -ForegroundColor Gray
                 $hasVideo = (ffprobe -v error -select_streams v -show_entries stream=index -of csv=p=0 "$input" 2>$null | Out-String).Trim()
                 if ([string]::IsNullOrWhiteSpace($hasVideo)) {
-                    Write-Host "  $($S.Skip) Skipped (non-video format)" -ForegroundColor Gray
+                    Write-Host "  $($S.Bullet) Skipped (non-video format)" -ForegroundColor Gray
                     if ($fileExt -and $knownIgnoredExtensions -notcontains $fileExt) { 
                         $knownIgnoredExtensions += $fileExt 
                         if ($sessionNewIgnored -notcontains $fileExt) { $sessionNewIgnored += $fileExt }
@@ -488,7 +439,7 @@ if ($totalFiles -eq 0) {
                     $skippedCount++
                     continue
                 } else {
-                    Write-Host "  $($S.Video) Verified video format" -ForegroundColor Gray
+                    Write-Host "  $($S.Bullet) Verified video format" -ForegroundColor Gray
                     if ($fileExt -and $knownVideoExtensions -notcontains $fileExt) { 
                         $knownVideoExtensions += $fileExt 
                         if ($sessionNewVideos -notcontains $fileExt) { $sessionNewVideos += $fileExt }
@@ -501,12 +452,12 @@ if ($totalFiles -eq 0) {
             $aCodec = (ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "$input" 2>$null | Out-String).Trim()
 
             if ($vCodec -match "hevc|av1") {
-                Write-Host "  $($S.Skip) Skipped (already efficient: $vCodec)" -ForegroundColor Gray
+                Write-Host "  $($S.Bullet) Skipped (already efficient: $vCodec)" -ForegroundColor Gray
                 $skippedCount++
                 continue
             }
 
-            Write-Host "  $($S.Info) Codecs: [V:$vCodec, A:$aCodec]" -ForegroundColor Gray
+            Write-Host "  $($S.Bullet) Codecs: [V:$vCodec, A:$aCodec]" -ForegroundColor Gray
 
             # --- Finalize Paths ---
             $finalExt = if ($container -eq "Original") { $file.Extension } else { ".$($container.ToLower())" }
@@ -525,7 +476,7 @@ if ($totalFiles -eq 0) {
                 $incompatible = $false
                 if ($finalExt -eq ".mp4" -and $aCodec -notmatch "aac|mp3|opus|ac3|eac3|mp2|mp1") { $incompatible = $true }
                 elseif ($finalExt -eq ".mov" -and $aCodec -notmatch "aac|mp3|ac3|eac3|alac|pcm") { $incompatible = $true }
-                if ($incompatible) { $targetAudioCodec = "aac"; $targetAudioBitrate = "128k"; Write-Host "  $($S.Warning) Audio incompatible. Encoding to AAC." -ForegroundColor Yellow }
+                if ($incompatible) { $targetAudioCodec = "aac"; $targetAudioBitrate = "128k"; Write-Host "  $($S.Bullet) Audio incompatible. Encoding to AAC." -ForegroundColor Yellow }
             }
 
             $success = $false
@@ -536,7 +487,7 @@ if ($totalFiles -eq 0) {
             for ($i = 0; $i -lt $qualityList.Length; $i++) {
                 $q = $qualityList[$i]
                 $passInfo = if ($qualityList.Length -gt 1) { "(Pass $($i + 1)/$($qualityList.Length))" } else { "" }
-                Write-Host "  $($S.Config) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
+                Write-Host "  $($S.Bullet) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
 
                 $ffArgs = @("-y", "-loglevel", "error", "-stats")
                 if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
@@ -572,14 +523,14 @@ if ($totalFiles -eq 0) {
                             $s1 = (Get-Item -LiteralPath $tempOutput).Length
                             Start-Sleep -Milliseconds 200
                             $s2 = (Get-Item -LiteralPath $tempOutput).Length
-                            if ($s1 -eq $s2 -and $s1 -gt 1MB) { $fileReady = $true; break }
+                            if ($s1 -eq $s2 -and $s1 -gt 10KB) { $fileReady = $true; break }
                         }
                         Start-Sleep -Milliseconds 200
                     }
                 }
 
                 if ($ffmpegExit -ne 0) {
-                    Write-Host "     $($S.Error) FFmpeg error ($ffmpegExit)" -ForegroundColor Red
+                    Write-Host "     FFmpeg error ($ffmpegExit)" -ForegroundColor Red
                     if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
                     $unoptimizable = $true; $unoptReason = "FFmpeg error"; break
                 }
@@ -597,17 +548,17 @@ if ($totalFiles -eq 0) {
                             if ($outSize -lt $inSize) {
                                 $diffMB = [math]::Round(($inSize - $outSize) / 1MB, 2)
                                 $percent = [math]::Round((($inSize - $outSize) / $inSize) * 100, 2)
-                                Write-Host "     $($S.Success) Saved: ${diffMB}MB (${percent}%)" -ForegroundColor Green
+                                Write-Host "     Saved: ${diffMB}MB (${percent}%)" -ForegroundColor Green
                                 $success = $true; $successfulQuality = $q
                                 $totalInBytes += $inSize; $totalOutBytes += $outSize
                                 break
                             } else {
-                                Write-Host "     $($S.Warning) Output larger than source" -ForegroundColor Yellow
+                                Write-Host "     Output larger than source" -ForegroundColor Yellow
                                 if ($i -eq ($qualityList.Length - 1)) { $unoptimizable = $true; $unoptReason = "Larger than source" }
                                 else { if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force } }
                             }
                         } else {
-                            Write-Host "     $($S.Error) Duration mismatch" -ForegroundColor Red
+                            Write-Host "     Duration mismatch" -ForegroundColor Red
                             $unoptimizable = $true; $unoptReason = "Duration mismatch"; break
                         }
                     } else {
@@ -616,7 +567,7 @@ if ($totalFiles -eq 0) {
                         break
                     }
                 } else {
-                    Write-Host "     $($S.Error) Verification failed" -ForegroundColor Red
+                    Write-Host "     Verification failed" -ForegroundColor Red
                     $unoptimizable = $true; $unoptReason = "Verification failed"; break
                 }
             }
@@ -632,32 +583,27 @@ if ($totalFiles -eq 0) {
             } elseif ($unoptimizable) {
                 if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
                 
-                # If a file of this extension failed once, we might want to skip others like it
-                if ($fileExt -and $failedExtensions -notcontains $fileExt) {
-                    $failedExtensions += $fileExt
-                }
-
                 switch ($unoptAction) {
                     "Move to 'Unoptimizable'" {
                         $unoptDir = Join-Path $dir "Unoptimizable"
                         if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
                         $dest = Join-Path $unoptDir $file.Name
                         Move-Item -LiteralPath $input -Destination $dest -Force
-                        Write-Host "     $($S.Arrow) Moved to 'Unoptimizable' folder" -ForegroundColor Gray
+                        Write-Host "     Moved to 'Unoptimizable' folder" -ForegroundColor Gray
                     }
                     "Move to Custom Folder..." {
                         if ($unoptCustomFolder) { 
                             $dest = Join-Path $unoptCustomFolder $file.Name
                             Move-Item -LiteralPath $input -Destination $dest -Force
-                            Write-Host "     $($S.Arrow) Moved to custom folder: $unoptCustomFolder" -ForegroundColor Gray
+                            Write-Host "     Moved to custom folder: $unoptCustomFolder" -ForegroundColor Gray
                         }
                     }
                     "Delete File" { 
                         Remove-Item -LiteralPath $input -Force 
-                        Write-Host "     $($S.Error) Deleted original file" -ForegroundColor Red
+                        Write-Host "     Deleted original file" -ForegroundColor Red
                     }
                     "Ignore (Keep Original)" {
-                        Write-Host "     $($S.Info) Kept original file" -ForegroundColor Gray
+                        Write-Host "     Kept original file" -ForegroundColor Gray
                     }
                 }
                 $failedCount++
