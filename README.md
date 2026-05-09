@@ -1,21 +1,32 @@
-# 🎬 Ultimate Video Optimizer
+# 🎬 Ultimate Video Optimizer v2.0.0
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
-[![PowerShell: 5.1+](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](https://microsoft.com/powershell)
+[![PowerShell: 5.1+](https://img.shields.io/badge/PowerShell-5.1+-blue.svg)](microsoft.com/powershell)
 
-A **professional-grade, interactive PowerShell utility** designed to automate the mass-optimization of video libraries. It leverages FFmpeg to convert videos into ultra-efficient **HEVC (H.265)** or **AV1** formats, significantly reducing file size while maintaining visual fidelity.
+A **professional-grade, interactive PowerShell utility** designed for high-precision mass-optimization of video libraries. Version 2.0 introduces the **Dynamic VMAF Engine**, allowing you to target specific perceptual quality levels rather than guessing bitrates.
 
 ---
 
-## 🌟 Why Ultimate Video Optimizer?
+## 🚀 What's New in v2.0 (The VMAF Update)
 
-Unlike simple "one-click" converters, this tool is built for **power users and creators** who need to process hundreds of files safely.
+- **Dynamic VMAF Optimization:** Automatically finds the perfect Constant Quality (CQ) value for *every* video using Netflix's VMAF algorithm. 
+- **Adaptive TUI:** A brand new, fully dynamic terminal interface that evolves based on your chosen settings.
+- **Hybrid Precision Search:** Uses a dynamic stepping algorithm (up to 15 passes on small samples) to home in on your exact visual quality target.
+- **Professional Reporting:** Features a beautifully designed ASCII summary table and VMAF-aware logging.
+- **Improved Performance:** Optimized GPU workflows for NVIDIA (NVENC), Intel (QSV), and AMD (AMF).
 
-- **Intelligence First:** Automatically detects your hardware (NVIDIA, AMD, Intel) and picks the fastest encoder.
-- **Safety Guaranteed:** Uses a **Verify-then-Swap** workflow. It never deletes an original file unless the optimized version is verified for size, duration, and integrity.
-- **Smart Logic:** Automatically skips files that are already efficient (HEVC/AV1) or that have failed optimization with your current settings in the past.
-- **No Installation:** Runs directly from your terminal or via a single `.bat` file.
+---
+
+## 🌟 Why Use VMAF?
+
+Traditional optimization uses a fixed bitrate or CRF, which often wastes space on simple videos (cartoons) or loses detail on complex ones (action movies). 
+
+The **Dynamic VMAF Engine** in version 2.0:
+1. Extracts a 5-second sample from the video.
+2. Performs multiple test encodes at different quality levels.
+3. Measures the visual score using `libvmaf`.
+4. Selects the absolute best quality value to ensure **visual transparency** (indistinguishable from source) while maximizing file savings.
 
 ---
 
@@ -34,37 +45,32 @@ Double-click `Video Optimizer.bat` or run `.\Video Optimizer.ps1` in PowerShell.
 
 ## 🧠 How It Works (The Technical Workflow)
 
-The script follows a rigorous 6-stage pipeline for every file:
-
-1.  **Detection:** Identifies hardware acceleration support (NVENC, AMF, QSV) via dummy encodes.
-2.  **Analysis:** Checks source codec, duration, and metadata using `ffprobe`.
-3.  **Optimization:** Executes FFmpeg with your chosen quality/preset. 
-4.  **Verification:** Compares output vs. input duration (±2s) and file size.
-5.  **Multi-Pass Fallback:** If the output is larger than the original, it automatically retries with a lower quality setting (if provided).
-6.  **Atomic Replacement:** Only if verified, it replaces the original file with the optimized version using an atomic swap to prevent data loss.
+1.  **Hardware Detection:** Probes your system for NVIDIA, AMD, or Intel GPU acceleration.
+2.  **VMAF Probing:** If enabled, the script performs a "hunt" for the optimal quality value using a dynamic hybrid search on a mid-video sample.
+3.  **Optimization:** Executes a high-speed GPU-accelerated encode using the precisely calculated CQ value.
+4.  **Verification:** Validates output duration and ensures the new file is smaller than the original.
+5.  **Atomic Swap:** Safely replaces the original file with the optimized version only after all checks pass.
 
 ---
 
 ## ⚙️ Configuration & Encoders
 
+### Advanced VMAF Settings
+
+| Setting | Default | Description |
+| :--- | :--- | :--- |
+| **Target VMAF** | `93` | Perceptual goal. 93-95 is visually lossless. |
+| **CQ Range** | `10 - 48` | Search boundaries from high-fidelity to high-compression. |
+| **Search Step** | `4` | Initial jump size for the quality hunt. |
+
 ### Supported Encoders
 
-| Hardware | Encoder | Codec | Best For |
-| :--- | :--- | :--- | :--- |
-| **NVIDIA** | `av1_nvenc`, `hevc_nvenc` | AV1 / HEVC | Maximum speed & efficiency |
-| **Intel** | `av1_qsv`, `hevc_qsv` | AV1 / HEVC | High-quality QuickSync encoding |
-| **AMD** | `av1_amf`, `hevc_amf` | AV1 / HEVC | Radeon GPU acceleration |
-| **CPU** | `libsvtav1`, `libx265` | AV1 / HEVC | Maximum quality (slowest) |
-
-### Key Features Explained
-
-- **Multi-Pass Quality:** Enter `23,27,31`. If `23` results in a larger file, it immediately tries `27`, ensuring you never waste space.
-- **Audio Actions:** Choose to `Copy` original audio or re-encode to `AAC`, `Opus`, or `AC3`. It automatically fixes MP4/MOV compatibility issues.
-- **Unoptimizable Cache:** Remembers files that couldn't be compressed and skips them in future runs to save time.
-- **Failed Actions:** Configure what happens to files that can't be optimized:
-    - 📁 Move to a dedicated "Unoptimizable" folder.
-    - 🗑️ Delete them (useful for temp/proxy cleanup).
-    - 🛑 Ignore and keep in place.
+| Hardware | Encoder | Codec |
+| :--- | :--- | :--- |
+| **NVIDIA** | `av1_nvenc`, `hevc_nvenc` | Ultra-fast GPU acceleration |
+| **Intel** | `av1_qsv`, `hevc_qsv` | QuickSync high-efficiency encoding |
+| **AMD** | `av1_amf`, `hevc_amf` | Radeon GPU acceleration |
+| **CPU** | `libsvtav1`, `libx265` | Maximum precision software encoding |
 
 ---
 
@@ -73,7 +79,7 @@ The script follows a rigorous 6-stage pipeline for every file:
 - **Windows 10/11** (PowerShell 5.1 or 7+)
 - **FFmpeg** (Must be in your system `PATH`)
     - [Download FFmpeg here](https://ffmpeg.org/download.html)
-- **Optional:** NVIDIA/AMD/Intel GPU for hardware acceleration.
+    - *Note: Ensure your FFmpeg build includes `libvmaf` support (included in most "full" builds).*
 
 ---
 
