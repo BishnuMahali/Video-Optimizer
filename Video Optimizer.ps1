@@ -172,6 +172,68 @@ function Save-UnoptimizableCache {
     $Cache.Values | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
 }
 
+function Write-SummaryBox {
+    param(
+        [int]$Processed,
+        [int]$Skipped,
+        [int]$Failed,
+        [string]$Saved,
+        [array]$NewVideos,
+        [array]$NewIgnored
+    )
+    
+    Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "  ║             OPTIMIZATION COMPLETE                ║" -ForegroundColor Cyan
+    Write-Host "  ╠══════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    
+    $rows = @(
+        @{ Label = " Files Processed"; Value = $Processed; Color = "White" }
+        @{ Label = " Files Skipped"; Value = $Skipped; Color = "White" }
+        @{ Label = " Files Failed"; Value = $Failed; Color = "White" }
+    )
+    
+    foreach ($row in $rows) {
+        Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+        Write-Host ($row.Label.PadRight(22) + ": " + $row.Value).PadRight(48) -ForegroundColor $row.Color -NoNewline
+        Write-Host " ║" -ForegroundColor Cyan
+    }
+    
+    Write-Host "  ╟──────────────────────────────────────────────────╢" -ForegroundColor Cyan
+    Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+    Write-Host (" Total Space Saved".PadRight(22) + ": $Saved").PadRight(48) -ForegroundColor Green -NoNewline
+    Write-Host " ║" -ForegroundColor Cyan
+    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+
+    if ($NewVideos.Count -gt 0 -or $NewIgnored.Count -gt 0) {
+        Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
+        Write-Host "  ║                  SUGGESTIONS                     ║" -ForegroundColor Cyan
+        Write-Host "  ╠══════════════════════════════════════════════════╣" -ForegroundColor Cyan
+        Write-Host "  ║ Newly discovered formats found in this session:  ║" -ForegroundColor Cyan
+        Write-Host "  ║                                                  ║" -ForegroundColor Cyan
+        
+        if ($NewVideos.Count -gt 0) {
+            $exts = ($NewVideos -join ', ')
+            if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
+            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+            Write-Host ("  - Add to Inclusion: $exts").PadRight(48) -ForegroundColor Green -NoNewline
+            Write-Host " ║" -ForegroundColor Cyan
+        }
+        if ($NewIgnored.Count -gt 0) {
+            $exts = ($NewIgnored -join ', ')
+            if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
+            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+            Write-Host ("  - Add to Exclusion: $exts").PadRight(48) -ForegroundColor Gray -NoNewline
+            Write-Host " ║" -ForegroundColor Cyan
+        }
+        
+        Write-Host "  ║                                                  ║" -ForegroundColor Cyan
+        Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+        Write-Host " (Edit: `$knownVideoExtensions / `$knownIgnoredExt)".PadRight(48) -ForegroundColor DarkGray -NoNewline
+        Write-Host " ║" -ForegroundColor Cyan
+        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    }
+}
+
 # --- VMAF Advanced Logic ---
 $hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
 $vmafEnabled = $true
@@ -918,26 +980,7 @@ $totalSavedMB = [math]::Round(($totalInBytes - $totalOutBytes) / 1MB, 2)
 $savedGB = [math]::Round($totalSavedMB / 1024, 2)
 $savedDisplay = if ($savedGB -ge 1) { "$savedGB GB" } else { "$totalSavedMB MB" }
 
-Write-Host "`n"
-Write-Host "  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "  ║             OPTIMIZATION COMPLETE                ║" -ForegroundColor Cyan
-Write-Host "  ╠════════════════════════╦═════════════════════════╣" -ForegroundColor Cyan
-Write-Host "  ║ Files Processed        ║ " -NoNewline -ForegroundColor Cyan; Write-Host ([string]$processedCount).PadRight(23) -ForegroundColor White; Write-Host " ║" -ForegroundColor Cyan
-Write-Host "  ║ Files Skipped          ║ " -NoNewline -ForegroundColor Cyan; Write-Host ([string]$skippedCount).PadRight(23) -ForegroundColor White; Write-Host " ║" -ForegroundColor Cyan
-Write-Host "  ║ Files Failed           ║ " -NoNewline -ForegroundColor Cyan; Write-Host ([string]$failedCount).PadRight(23) -ForegroundColor White; Write-Host " ║" -ForegroundColor Cyan
-Write-Host "  ╠════════════════════════╬═════════════════════════╣" -ForegroundColor Cyan
-Write-Host "  ║ Total Space Saved      ║ " -NoNewline -ForegroundColor Cyan; Write-Host ($savedDisplay).PadRight(23) -ForegroundColor Green; Write-Host " ║" -ForegroundColor Cyan
-Write-Host "  ╚════════════════════════╩═════════════════════════╝" -ForegroundColor Cyan
-
-if ($sessionNewVideos.Count -gt 0 -or $sessionNewIgnored.Count -gt 0) {
-    Write-Host "`n [SUGGESTIONS] Newly discovered formats found during this session:" -ForegroundColor Cyan
-    if ($sessionNewVideos.Count -gt 0) {
-        Write-Host " $($S.Bullet) Add to Inclusion: $($sessionNewVideos -join ', ')" -ForegroundColor Green
-    }
-    if ($sessionNewIgnored.Count -gt 0) {
-        Write-Host " $($S.Bullet) Add to Exclusion: $($sessionNewIgnored -join ', ')" -ForegroundColor Gray
-    }
-    Write-Host " (Edit the script and add these to `$knownVideoExtensions or `$knownIgnoredExtensions)" -ForegroundColor DarkGray
-}
+# Call the summary UI function
+Write-SummaryBox -Processed $processedCount -Skipped $skippedCount -Failed $failedCount -Saved $savedDisplay -NewVideos $sessionNewVideos -NewIgnored $sessionNewIgnored
 
 Write-Host ""
