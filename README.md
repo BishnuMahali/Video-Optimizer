@@ -97,7 +97,7 @@ Copyright (c) 2026 Bishnu Mahali
 
 ## 🤝 Support & Connect
 
-These projects are simple utility scripts built to solve everyday problems. If you find them helpful in your workflow and would like to support their continued development, any small contribution is deeply appreciated! ❤️
+These projects are simple utility scripts built to solve everyday problems. If you find them helpful in your workflow and would like to support me, any small contribution is deeply appreciated! ❤️
 
 <p align="center">
   <a href="https://buymeacoffee.com/Bishnu"><img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee"></a>
