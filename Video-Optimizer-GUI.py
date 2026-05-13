@@ -286,7 +286,11 @@ class VideoOptimizerEngine:
         if container == 'Original': container = file_path.suffix
             
         temp_out = file_path.with_suffix(f"{file_path.suffix}.tmp{container}")
-        final_out = file_path.parent / f"{file_path.stem}_opt{container}"
+        
+        if config.get('OnSuccess') == 'Replace Original':
+            final_out = file_path.with_suffix(container)
+        else:
+            final_out = file_path.parent / f"{file_path.stem}_opt{container}"
         
         # 3. Hardware Decode Detection
         hw_decode_args = []
@@ -326,12 +330,12 @@ class VideoOptimizerEngine:
                 success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files)
                 
                 if success and temp_out.exists():
-                    val_res = self.validate_output(file_path, temp_out, final_out, file_info)
+                    val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
                     if val_res['Success']:
                         res.update(val_res)
                         break
                     else:
-                        temp_out.unlink()
+                        if temp_out.exists(): temp_out.unlink()
                         self.log(f"[FAIL] VMAF Target {target} yielded larger file or failed validation.")
                 else:
                     if temp_out.exists(): temp_out.unlink()
@@ -345,12 +349,12 @@ class VideoOptimizerEngine:
                 success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files)
                 
                 if success and temp_out.exists():
-                    val_res = self.validate_output(file_path, temp_out, final_out, file_info)
+                    val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
                     if val_res['Success']:
                         res.update(val_res)
                         break
                     else:
-                        temp_out.unlink()
+                        if temp_out.exists(): temp_out.unlink()
                 else:
                     if temp_out.exists(): temp_out.unlink()
 
@@ -398,14 +402,30 @@ class VideoOptimizerEngine:
         
         return self.run_ffmpeg_with_progress(ff_args, file_index, total_files)
 
-    def validate_output(self, file_path, temp_out, final_out, file_info):
+    def validate_output(self, file_path, temp_out, final_out, file_info, config):
         self.log("[VALIDATE] Verifying output integrity...")
         new_size = temp_out.stat().st_size
         if new_size < file_info['OldSizeBytes']:
             in_dur = self.get_video_duration(file_path)
             out_dur = self.get_video_duration(temp_out)
             if abs(in_dur - out_dur) <= 2.0:
-                temp_out.replace(final_out)
+                if config.get('OnSuccess') == 'Replace Original':
+                    backup = file_path.with_suffix(f"{file_path.suffix}.bak")
+                    try:
+                        if backup.exists(): backup.unlink()
+                        file_path.rename(backup)
+                        if final_out.exists() and final_out != backup:
+                            final_out.unlink()
+                        temp_out.replace(final_out)
+                        if backup.exists(): backup.unlink()
+                    except Exception as e:
+                        self.log(f"[FAIL] Replacement failed: {e}")
+                        if backup.exists() and not file_path.exists():
+                            backup.rename(file_path)
+                        return {'Success': False, 'Msg': 'Replacement Failed'}
+                else:
+                    temp_out.replace(final_out)
+                
                 self.log(f"[SUCCESS] Optimization complete. Saved {(file_info['OldSizeBytes'] - new_size) / 1024 / 1024:.2f} MB")
                 return {'Success': True, 'NewSize': new_size, 'Msg': 'Optimized'}
             else:
@@ -522,8 +542,12 @@ class VideoOptimizerGUI(ctk.CTk):
         self.engine_frame.grid_columnconfigure(1, weight=1)
 
         self.chk_recursive = ctk.CTkCheckBox(self.sidebar, text="Recursive Scan")
-        self.chk_recursive.pack(padx=20, pady=5, anchor="w")
+        self.chk_recursive.pack(padx=20, pady=(15, 5), anchor="w")
         self.chk_recursive.select()
+
+        self.chk_skip_efficient = ctk.CTkCheckBox(self.sidebar, text="Skip Efficient Codecs (HEVC/AV1)")
+        self.chk_skip_efficient.pack(padx=20, pady=5, anchor="w")
+        self.chk_skip_efficient.select()
         
         self.chk_vmaf = ctk.CTkCheckBox(self.sidebar, text="Enable Advanced VMAF", text_color="#2DA44E", font=ctk.CTkFont(weight="bold"), command=self.toggle_vmaf_card)
         self.chk_vmaf.pack(padx=20, pady=5, anchor="w")
@@ -545,7 +569,7 @@ class VideoOptimizerGUI(ctk.CTk):
         self.slider_vmaf.set(93)
 
         ctk.CTkLabel(self.vmaf_card, text="VMAF Target Ladder (Comma Separated)", font=ctk.CTkFont(size=10)).pack(padx=10, anchor="w")
-        self.entry_vmaf_ladder = ctk.CTkEntry(self.vmaf_card, placeholder_text="e.g. 95, 93, 91")
+        self.entry_vmaf_ladder = ctk.CTkEntry(self.vmaf_card, placeholder_text="93,")
         self.entry_vmaf_ladder.pack(fill="x", padx=10, pady=(0, 5))
         self.entry_vmaf_ladder.insert(0, "93")
 
@@ -573,10 +597,15 @@ class VideoOptimizerGUI(ctk.CTk):
         self.combo_audio = ctk.CTkComboBox(self.sidebar, values=["Copy (Original)", "AAC (128k)", "AAC (192k)"])
         self.combo_audio.set("Copy (Original)")
         self.combo_audio.pack(fill="x", padx=20, pady=5)
+
+        # 4. SESSION OPTIONS
+        self.setup_section_label("4. SESSION OPTIONS")
         
-        self.chk_skip_efficient = ctk.CTkCheckBox(self.sidebar, text="Skip Efficient Codecs (HEVC/AV1)")
-        self.chk_skip_efficient.pack(padx=20, pady=5, anchor="w")
-        self.chk_skip_efficient.select()
+        self.lbl_on_success = ctk.CTkLabel(self.sidebar, text="On Success", font=ctk.CTkFont(size=10))
+        self.lbl_on_success.pack(padx=20, anchor="w")
+        self.combo_on_success = ctk.CTkComboBox(self.sidebar, values=["Replace Original", "Keep Original (Add _opt)"])
+        self.combo_on_success.set("Replace Original")
+        self.combo_on_success.pack(fill="x", padx=20, pady=5)
 
         self.lbl_on_fail = ctk.CTkLabel(self.sidebar, text="On Failure", font=ctk.CTkFont(size=10))
         self.lbl_on_fail.pack(padx=20, anchor="w")
@@ -584,10 +613,8 @@ class VideoOptimizerGUI(ctk.CTk):
         self.combo_on_fail.set("Move to 'Unoptimizable'")
         self.combo_on_fail.pack(fill="x", padx=20, pady=5)
 
-        # 4. SESSION OPTIONS
-        self.setup_section_label("4. SESSION OPTIONS")
         self.chk_resume = ctk.CTkCheckBox(self.sidebar, text="Enable Resume Functionality")
-        self.chk_resume.pack(padx=20, pady=5, anchor="w")
+        self.chk_resume.pack(padx=20, pady=(15, 5), anchor="w")
         self.chk_resume.select()
         self.chk_cache = ctk.CTkCheckBox(self.sidebar, text="Enable Cache")
         self.chk_cache.pack(padx=20, pady=5, anchor="w")
@@ -635,7 +662,7 @@ class VideoOptimizerGUI(ctk.CTk):
         self.tree_scroll.pack(side="right", fill="y")
 
         # Logs
-        self.log_text = ctk.CTkTextbox(self.main_frame, height=200, font=ctk.CTkFont(family="Consolas", size=11))
+        self.log_text = ctk.CTkTextbox(self.main_frame, height=200, font=ctk.CTkFont(family="Consolas", size=13))
         self.log_text.grid(row=2, column=0, sticky="ew", pady=(20, 0))
 
         # Bottom Bar
@@ -666,11 +693,23 @@ class VideoOptimizerGUI(ctk.CTk):
             fg_color = "white"
             selected_color = "#1f538d"
             header_bg = "#333333"
+            c_success = "#4ade80"
+            c_fail = "#f85149"
+            c_warn = "#d29922"
+            c_skip = "#8b949e"
+            c_info = "#58a6ff"
+            c_probe = "#bc8cff"
         else:
             bg_color = "#ffffff"
             fg_color = "black"
             selected_color = "#97bc62"
             header_bg = "#e1e1e1"
+            c_success = "#2da44e"
+            c_fail = "#cf222e"
+            c_warn = "#bf8700"
+            c_skip = "#6e7781"
+            c_info = "#0969da"
+            c_probe = "#8250df"
 
         style.theme_use("default")
         style.configure("Treeview", 
@@ -685,6 +724,20 @@ class VideoOptimizerGUI(ctk.CTk):
                         foreground=fg_color, 
                         relief="flat",
                         font=("Segoe UI", 9, "bold"))
+
+        self.tree.tag_configure("success", foreground=c_success)
+        self.tree.tag_configure("fail", foreground=c_fail)
+        self.tree.tag_configure("warn", foreground=c_warn)
+        self.tree.tag_configure("skip", foreground=c_skip)
+        self.tree.tag_configure("progress", foreground=c_info)
+
+        self.log_text.tag_config("info", foreground=c_info)
+        self.log_text.tag_config("success", foreground=c_success)
+        self.log_text.tag_config("fail", foreground=c_fail)
+        self.log_text.tag_config("warn", foreground=c_warn)
+        self.log_text.tag_config("probe", foreground=c_probe)
+        self.log_text.tag_config("encode", foreground=c_warn)
+        self.log_text.tag_config("skip", foreground=c_skip)
 
     def setup_section_label(self, text):
         lbl = ctk.CTkLabel(self.sidebar, text=text, font=ctk.CTkFont(size=11, weight="bold"), text_color="gray")
@@ -780,6 +833,7 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'SkipEfficient' in config:
                     if config['SkipEfficient']: self.chk_skip_efficient.select()
                     else: self.chk_skip_efficient.deselect()
+                if 'OnSuccess' in config: self.combo_on_success.set(config['OnSuccess'])
                 if 'OnFail' in config: self.combo_on_fail.set(config['OnFail'])
                 if 'Resume' in config:
                     if config['Resume']: self.chk_resume.select()
@@ -816,6 +870,7 @@ class VideoOptimizerGUI(ctk.CTk):
                 'Preset': self.combo_preset.get(),
                 'Audio': self.combo_audio.get(),
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
+                'OnSuccess': self.combo_on_success.get(),
                 'OnFail': self.combo_on_fail.get(),
                 'Resume': bool(self.chk_resume.get()),
                 'Cache': bool(self.chk_cache.get()),
@@ -886,7 +941,23 @@ class VideoOptimizerGUI(ctk.CTk):
 
     def add_log(self, msg):
         ts = datetime.now().strftime('%H:%M:%S')
-        self.log_text.insert("end", f"{ts} - {msg}\n")
+        full_msg = f"{ts} - {msg}\n"
+        
+        tag = None
+        if "[INFO]" in msg: tag = "info"
+        elif "[SUCCESS]" in msg: tag = "success"
+        elif "[FAIL]" in msg: tag = "fail"
+        elif "[WARN]" in msg: tag = "warn"
+        elif "[PROBE]" in msg: tag = "probe"
+        elif "[ENCODE]" in msg: tag = "encode"
+        elif "[SKIP]" in msg: tag = "skip"
+        elif ">>> Process Finished" in msg: tag = "success"
+        elif ">>> Process Stopped" in msg: tag = "warn"
+        
+        if tag:
+            self.log_text.insert("end", full_msg, tag)
+        else:
+            self.log_text.insert("end", full_msg)
         self.log_text.see("end")
 
     def update_status_label(self, status):
@@ -928,24 +999,35 @@ class VideoOptimizerGUI(ctk.CTk):
         elif "192k" in audio: audio = "aac 192k"
         else: audio = "copy"
 
+        vmaf_samples = 1 if "1 Sample" in self.combo_samples.get() else (5 if "5 Samples" in self.combo_samples.get() else 3)
+        vmaf_dur = 3 if "3 Seconds" in self.combo_probe.get() else (10 if "10 Seconds" in self.combo_probe.get() else 5)
+        
+        # Build Robust SettingsKey
+        if self.chk_vmaf.get():
+            q_part = f"vmaf={self.entry_vmaf_ladder.get()}|samples={vmaf_samples}|dur={vmaf_dur}"
+        else:
+            q_part = f"quality={self.entry_ladder.get()}"
+        settings_key = f"codec={sel_enc['Codec']}|mode={sel_enc['Mode']}|preset={self.combo_preset.get()}|{q_part}|audio={audio}|container={container}"
+
         config = {
             "Encoder": sel_enc['Codec'],
             "Mode": sel_enc['Mode'],
             "VmafEnabled": self.chk_vmaf.get(),
             "VmafTarget": int(self.slider_vmaf.get()),
             "VmafLadder": sorted([int(x.strip()) for x in self.entry_vmaf_ladder.get().split(',') if x.strip().isdigit()], reverse=True),
-            "VmafSamples": 1 if "1 Sample" in self.combo_samples.get() else (5 if "5 Samples" in self.combo_samples.get() else 3),
-            "VmafDur": 3 if "3 Seconds" in self.combo_probe.get() else (10 if "10 Seconds" in self.combo_probe.get() else 5),
+            "VmafSamples": vmaf_samples,
+            "VmafDur": vmaf_dur,
             "QualityLadder": sorted([int(x.strip()) for x in self.entry_ladder.get().split(',') if x.strip().isdigit()]),
             "Preset": self.combo_preset.get(),
             "Container": container,
             "Audio": audio,
             "SkipEfficient": bool(self.chk_skip_efficient.get()),
+            "OnSuccess": self.combo_on_success.get(),
             "OnFail": self.combo_on_fail.get(),
             "ResumeEnabled": self.chk_resume.get(),
             "CacheEnabled": self.chk_cache.get(),
             "LogEnabled": self.chk_log.get(),
-            "SettingsKey": f"{sel_enc['Codec']}|{self.combo_preset.get()}|{self.entry_vmaf_ladder.get()}|{audio}",
+            "SettingsKey": settings_key,
             "CacheFile": os.path.join(self.entry_path.get(), ".Video Optimizer", "Cache.json"),
             "Cache": {}
         }
@@ -1016,7 +1098,23 @@ class VideoOptimizerGUI(ctk.CTk):
         if "new_size" in kwargs: values[2] = kwargs["new_size"]
         if "saving" in kwargs: values[3] = kwargs["saving"]
         if "status" in kwargs: values[4] = kwargs["status"]
-        self.after(0, lambda: self.tree.item(item_id, values=values))
+        
+        status = values[4]
+        tag = ""
+        if status == "Done":
+            saving_str = str(values[3])
+            if saving_str.startswith("-"):
+                tag = "fail"
+            else:
+                tag = "success"
+        elif status == "In Progress": tag = "progress"
+        elif status in ["Already Optimized", "Cached Skip"]: tag = "skip"
+        elif "Fail" in status or status in ["Duration Mismatch", "Larger than Source"]: tag = "fail"
+        
+        if tag:
+            self.after(0, lambda: self.tree.item(item_id, values=values, tags=(tag,)))
+        else:
+            self.after(0, lambda: self.tree.item(item_id, values=values))
 
     def update_stats(self):
         self.stat_saved.configure(text=self.engine.format_bytes(self.total_saved_bytes))
