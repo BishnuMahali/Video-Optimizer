@@ -41,7 +41,7 @@ where pwsh >nul 2>&1 && set "PS_CMD=pwsh"
     "        python -m venv .venv" ^
     "    }" ^
     "    Write-Host '[INFO] Activating environment and checking requirements...' -ForegroundColor Gray;" ^
-    "    & \".venv\Scripts\python.exe\" -m pip install -r requirements.txt --quiet;" ^
+    "    & \".venv\Scripts\python.exe\" -m pip install -r HELPER\REQUIREMENTS.txt --quiet;" ^
     "    Write-Host '[SUCCESS] Launching Python GUI...' -ForegroundColor Green;" ^
     "    & \".venv\Scripts\python.exe\" $pythonScript;" ^
     "} else {" ^

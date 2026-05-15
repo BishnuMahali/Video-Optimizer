@@ -1,4 +1,4 @@
-# Ultimate Video Optimizer
+﻿# Ultimate Video Optimizer
 # Version: 2.0.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
@@ -269,9 +269,9 @@ function Write-SummaryBox {
         [array]$NewIgnored
     )
     
-    Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║             OPTIMIZATION COMPLETE                ║" -ForegroundColor Cyan
-    Write-Host "  ╠══════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    Write-Host "`n  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—" -ForegroundColor Cyan
+    Write-Host "  â•‘             OPTIMIZATION COMPLETE                â•‘" -ForegroundColor Cyan
+    Write-Host "  â• â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•£" -ForegroundColor Cyan
     
     $rows = @(
         @{ Label = " Files Processed"; Value = $Processed; Color = "White" }
@@ -280,45 +280,44 @@ function Write-SummaryBox {
     )
     
     foreach ($row in $rows) {
-        Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+        Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
         Write-Host ($row.Label.PadRight(22) + ": " + $row.Value).PadRight(48) -ForegroundColor $row.Color -NoNewline
-        Write-Host " ║" -ForegroundColor Cyan
+        Write-Host " â•‘" -ForegroundColor Cyan
     }
     
-    Write-Host "  ╟──────────────────────────────────────────────────╢" -ForegroundColor Cyan
-    Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  â•Ÿâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â•¢" -ForegroundColor Cyan
+    Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
     Write-Host (" Total Space Saved".PadRight(22) + ": $Saved").PadRight(48) -ForegroundColor Green -NoNewline
-    Write-Host " ║" -ForegroundColor Cyan
-    Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host " â•‘" -ForegroundColor Cyan
+    Write-Host "  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor Cyan
 
     if ($NewVideos.Count -gt 0 -or $NewIgnored.Count -gt 0) {
-        Write-Host "`n  ╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "  ║                  SUGGESTIONS                     ║" -ForegroundColor Cyan
-        Write-Host "  ╠══════════════════════════════════════════════════╣" -ForegroundColor Cyan
-        Write-Host "  ║ Newly discovered formats found in this session:  ║" -ForegroundColor Cyan
-        Write-Host "  ║                                                  ║" -ForegroundColor Cyan
+        Write-Host "`n  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—" -ForegroundColor Cyan
+        Write-Host "  â•‘                  SUGGESTIONS                     â•‘" -ForegroundColor Cyan
+        Write-Host "  â• â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•£" -ForegroundColor Cyan
+        Write-Host "  â•‘ Newly discovered formats found in this session:  â•‘" -ForegroundColor Cyan
+        Write-Host "  â•‘                                                  â•‘" -ForegroundColor Cyan
         
         if ($NewVideos.Count -gt 0) {
             $exts = ($NewVideos -join ', ')
             if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
-            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+            Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
             Write-Host ("  - Add to Inclusion: $exts").PadRight(48) -ForegroundColor Green -NoNewline
-            Write-Host " ║" -ForegroundColor Cyan
+            Write-Host " â•‘" -ForegroundColor Cyan
         }
         if ($NewIgnored.Count -gt 0) {
             $exts = ($NewIgnored -join ', ')
             if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
-            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+            Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
             Write-Host ("  - Add to Exclusion: $exts").PadRight(48) -ForegroundColor Gray -NoNewline
-            Write-Host " ║" -ForegroundColor Cyan
+            Write-Host " â•‘" -ForegroundColor Cyan
         }
         
-        Write-Host "  ║                                                  ║" -ForegroundColor Cyan
-        Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
+        Write-Host "  â•‘                                                  â•‘" -ForegroundColor Cyan
+        Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
         Write-Host " (Edit: `$knownVideoExtensions / `$knownIgnoredExt)".PadRight(48) -ForegroundColor DarkGray -NoNewline
-        Write-Host " ║" -ForegroundColor Cyan
-        Write-Host "  ╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
-    }
+        Write-Host " â•‘" -ForegroundColor Cyan
+        Write-Host "  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor Cyan
 }
 
 # --- VMAF Advanced Logic ---
@@ -421,11 +420,18 @@ function Find-OptimalCq {
     $bestCQ = $currentCQ
     $bestDiff = 100
     $bestScore = 0
+    $maxScore = 0
+    $maxScoreCQ = $currentCQ
     
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         $score = Get-VmafScore -InputPath $InputPath -Codec $Codec -CQ $currentCQ -Preset $Preset
         Write-Host "     Pass $($attempt): CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
         
+        if ($score -gt $maxScore) {
+            $maxScore = $score
+            $maxScoreCQ = $currentCQ
+        }
+
         $diff = [math]::Abs($score - $TargetVmaf)
         if ($diff -lt $bestDiff) {
             $bestDiff = $diff
@@ -459,7 +465,7 @@ function Find-OptimalCq {
     }
     
     Write-Host "  $($S.Bullet) Optimal CQ Found: $bestCQ (VMAF: $([math]::Round($bestScore,2)))" -ForegroundColor Green
-    return [PSCustomObject]@{ CQ = $bestCQ; Score = $bestScore }
+    return [PSCustomObject]@{ CQ = $bestCQ; Score = $bestScore; MaxScore = $maxScore; MaxScoreCQ = $maxScoreCQ }
 }
 
 # --- Preset Options ---
@@ -965,19 +971,35 @@ if ($totalFiles -eq 0) {
             } else { @(0) }
             
             $lastBestScoreVal = $null
+            $maxAchievableVmaf = 100.0
+            $maxVmafCq = $null
 
             foreach ($currentTarget in $vmafTargetsToTry) {
                 if ($global:vmafEnabled) {
-                    if ($null -ne $lastBestScoreVal -and $lastBestScoreVal -le $currentTarget) {
-                        Write-Host "  $($S.Bullet) Skipping VMAF Target $currentTarget as previous max VMAF was $([math]::Round($lastBestScoreVal,2))." -ForegroundColor Gray
+                    if ($currentTarget -gt $maxAchievableVmaf + 0.5) {
+                        Write-Host "  $($S.Bullet) Skipping VMAF Target $currentTarget (Ceiling is $([math]::Round($maxAchievableVmaf,1)))." -ForegroundColor Gray
                         continue
                     }
 
-                    Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                    $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget
-                    $optimalCq = $optimalResult.CQ
-                    $lastBestScoreVal = $optimalResult.Score
-                    $activeQualityList = @($optimalCq)
+                    if ($null -ne $maxVmafCq -and [math]::Abs($currentTarget - $maxAchievableVmaf) -le 0.5) {
+                        Write-Host "  $($S.Bullet) Target $currentTarget is close to known ceiling $([math]::Round($maxAchievableVmaf,1)). Using CQ $maxVmafCq." -ForegroundColor Cyan
+                        $optimalCq = $maxVmafCq
+                        $activeQualityList = @($optimalCq)
+                    } else {
+                        Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
+                        $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget
+                        $optimalCq = $optimalResult.CQ
+                        $lastBestScoreVal = $optimalResult.Score
+                        
+                        if ($optimalResult.MaxScore -lt $currentTarget - 0.5) {
+                            Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Skipping encode." -ForegroundColor Yellow
+                            $maxAchievableVmaf = $optimalResult.MaxScore
+                            $maxVmafCq = $optimalResult.MaxScoreCQ
+                            continue
+                        }
+                        
+                        $activeQualityList = @($optimalCq)
+                    }
                 } else {
                     $activeQualityList = $qualityList
                 }
@@ -1126,14 +1148,15 @@ if ($totalFiles -eq 0) {
         }
     } finally {
         if ($global:currentTempOutput -and (Test-Path -LiteralPath $global:currentTempOutput)) { Remove-Item -LiteralPath $global:currentTempOutput -Force }
+        
+        Write-Host "`n [INFO] Process stopped or finished. Generating summary..." -ForegroundColor Yellow
+        $totalSavedMB = [math]::Round(($totalInBytes - $totalOutBytes) / 1MB, 2)
+        $savedGB = [math]::Round($totalSavedMB / 1024, 2)
+        $savedDisplay = if ($savedGB -ge 1) { "$savedGB GB" } else { "$totalSavedMB MB" }
+
+        # Call the summary UI function
+        Write-SummaryBox -Processed $processedCount -Skipped $skippedCount -Failed $failedCount -Saved $savedDisplay -NewVideos $sessionNewVideos -NewIgnored $sessionNewIgnored
     }
 }
-
-$totalSavedMB = [math]::Round(($totalInBytes - $totalOutBytes) / 1MB, 2)
-$savedGB = [math]::Round($totalSavedMB / 1024, 2)
-$savedDisplay = if ($savedGB -ge 1) { "$savedGB GB" } else { "$totalSavedMB MB" }
-
-# Call the summary UI function
-Write-SummaryBox -Processed $processedCount -Skipped $skippedCount -Failed $failedCount -Saved $savedDisplay -NewVideos $sessionNewVideos -NewIgnored $sessionNewIgnored
 
 Write-Host ""

@@ -1,0 +1,363 @@
+# Ultimate Video Optimizer Pro (WPF Edition)
+# MIT License | Copyright (c) 2026 Bishnu Mahali
+
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName System.Windows.Forms
+
+# ==========================================
+# THEME ENGINE
+# ==========================================
+function Get-SystemTheme {
+    try {
+        $reg = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" -ErrorAction SilentlyContinue
+        if ($reg.AppsUseLightTheme -eq 0) { return "Dark" }
+    } catch {}
+    return "Light"
+}
+
+$CurrentTheme = Get-SystemTheme
+$Theme = if ($CurrentTheme -eq "Dark") {
+    @{ WindowBg="#1B1F23"; CardBg="#24292E"; TextMain="#E6EDF3"; TextSub="#8C959F"; Border="#30363D"; InputBg="#0D1117"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#000000"; ProgressBg="#30363D"; Hover="#3FB950"; Success="#2DA44E"; Error="#CF222E" }
+} else {
+    @{ WindowBg="#F0F2F5"; CardBg="#FFFFFF"; TextMain="#1B1F23"; TextSub="#57606A"; Border="#D0D7DE"; InputBg="#F6F8FA"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#D0D7DE"; ProgressBg="#E1E4E8"; Hover="#1A7F37"; Success="#2DA44E"; Error="#CF222E" }
+}
+
+# ==========================================
+# XAML UI DEFINITION
+# ==========================================
+$xaml_str = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Ultimate Video Optimizer Pro" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
+            <Grid>
+                <ToggleButton Name="ToggleButton" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" ClickMode="Press">
+                    <ToggleButton.Template>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border Name="Border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                                <Grid HorizontalAlignment="Right" Width="24"><Path Name="Arrow" Fill="{TemplateBinding Foreground}" Data="M 0 0 L 4 4 L 8 0 Z" VerticalAlignment="Center" HorizontalAlignment="Center"/></Grid>
+                            </Border>
+                        </ControlTemplate>
+                    </ToggleButton.Template>
+                </ToggleButton>
+                <ContentPresenter Name="ContentSite" IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="10,3,30,3" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                <Popup Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                    <Grid Name="DropDown" SnapsToDevicePixels="True" MinWidth="{TemplateBinding ActualWidth}" MaxHeight="{TemplateBinding MaxDropDownHeight}"><Border Name="DropDownBorder" Background="$($Theme.InputBg)" BorderBrush="$($Theme.Border)" BorderThickness="1" CornerRadius="4"><ScrollViewer Margin="0" SnapsToDevicePixels="True"><StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" /></ScrollViewer></Border></Grid>
+                </Popup>
+            </Grid>
+        </ControlTemplate>
+
+        <ControlTemplate x:Key="CheckBoxTemplate" TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal">
+                <Border Width="18" Height="18" BorderBrush="$($Theme.Border)" BorderThickness="1.5" Background="$($Theme.InputBg)" CornerRadius="3">
+                    <Path Name="CheckMark" Fill="$($Theme.Accent)" Data="M 0 5 L 4 9 L 10 0" Visibility="Collapsed" Stroke="$($Theme.Accent)" StrokeThickness="2.5" Margin="2" />
+                </Border>
+                <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" />
+            </StackPanel>
+            <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckMark" Property="Visibility" Value="Visible" /></Trigger></ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="$($Theme.TextMain)"/></Style>
+        <Style TargetType="CheckBox"><Setter Property="Template" Value="{StaticResource CheckBoxTemplate}"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/></Style>
+        <Style TargetType="RadioButton"><Setter Property="Foreground" Value="$($Theme.TextMain)"/></Style>
+        <Style TargetType="TextBox"><Setter Property="Background" Value="$($Theme.InputBg)"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Padding" Value="5"/></Style>
+        <Style TargetType="ComboBox"><Setter Property="Template" Value="{StaticResource ComboBoxTemplate}" /><Setter Property="Background" Value="$($Theme.InputBg)"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="Height" Value="32"/></Style>
+        <Style TargetType="ComboBoxItem"><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/><Setter Property="Padding" Value="10,6"/><Style.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="$($Theme.Accent)"/><Setter Property="Foreground" Value="White"/></Trigger></Style.Triggers></Style>
+        <Style TargetType="DataGrid"><Setter Property="Background" Value="$($Theme.InputBg)"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/><Setter Property="RowBackground" Value="$($Theme.CardBg)"/><Setter Property="AlternatingRowBackground" Value="$($Theme.InputBg)"/><Setter Property="HorizontalGridLinesBrush" Value="$($Theme.Border)"/><Setter Property="VerticalGridLinesBrush" Value="$($Theme.Border)"/><Setter Property="BorderThickness" Value="1"/><Setter Property="FontSize" Value="13"/><Setter Property="RowHeight" Value="32"/><Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/><Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/></Style>
+        <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="$($Theme.InputBg)"/><Setter Property="Foreground" Value="$($Theme.TextSub)"/><Setter Property="Padding" Value="10,8"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="BorderThickness" Value="0,0,1,1"/></Style>
+        <Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="10,5"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="$($Theme.Accent)"/><Setter Property="Foreground" Value="White"/></Trigger></Style.Triggers></Style>
+        <Style x:Key="CardStyle" TargetType="Border"><Setter Property="Background" Value="$($Theme.CardBg)"/><Setter Property="CornerRadius" Value="12"/><Setter Property="Padding" Value="20"/><Setter Property="Margin" Value="0,0,0,20"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Effect"><Setter.Value><DropShadowEffect BlurRadius="15" Color="$($Theme.Shadow)" ShadowDepth="2" Opacity="0.3"/></Setter.Value></Setter></Style>
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button"><Setter Property="Background" Value="$($Theme.Primary)"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Padding" Value="25,12"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Height" Value="45"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Name="Border" Background="{TemplateBinding Background}" CornerRadius="6"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Border" Property="Background" Value="$($Theme.Hover)"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Border" Property="Background" Value="$($Theme.ProgressBg)"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button"><Setter Property="Background" Value="$($Theme.InputBg)"/><Setter Property="Foreground" Value="$($Theme.TextMain)"/><Setter Property="BorderBrush" Value="$($Theme.Border)"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Height" Value="35"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Name="Border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Border" Property="Background" Value="$($Theme.CardBg)"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+        <Style x:Key="StopButtonStyle" TargetType="Button"><Setter Property="Background" Value="$($Theme.Error)"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Padding" Value="25,12"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Height" Value="45"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Name="Border" Background="{TemplateBinding Background}" CornerRadius="6"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Border" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Border" Property="Background" Value="$($Theme.ProgressBg)"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+    </Window.Resources>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Grid.Row="0" Margin="0,0,0,25" Orientation="Horizontal"><StackPanel><TextBlock Text="VIDEO OPTIMIZER PRO" FontSize="28" FontWeight="ExtraBold"/><TextBlock Text="Expert FFmpeg workflow with VMAF-based quality targeting" Foreground="$($Theme.TextSub)" FontSize="14"/></StackPanel></StackPanel>
+        
+        <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="450"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,20,0"><StackPanel>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}" x:Name="cardVmaf"><StackPanel><TextBlock Text="2. ADVANCED VMAF TUNING" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,5"><TextBlock Text="Target Quality (VMAF)" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafTarget" Text="93" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmaf" Minimum="70" Maximum="100" Value="93" Margin="0,0,0,15"/><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Samples" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboSamples"><ComboBoxItem Content="1 Sample"/><ComboBoxItem Content="3 Samples (Balanced)" IsSelected="True"/><ComboBoxItem Content="5 Samples"/></ComboBox></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Probe Duration" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboProbeDur"><ComboBoxItem Content="3 Seconds"/><ComboBoxItem Content="5 Seconds" IsSelected="True"/><ComboBoxItem Content="10 Seconds"/></ComboBox></StackPanel></Grid></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}" x:Name="cardManual" Visibility="Collapsed"><StackPanel><TextBlock Text="2. MANUAL QUALITY LADDER" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><TextBox x:Name="txtQualityLadder" Text="23,26,29" Height="30"/><TextBlock Text="Speed Preset" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,15,0,8"/><ComboBox x:Name="comboPreset"/></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="3. AUDIO &amp; POST-PROCESS" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboAudio" Margin="0,0,0,15"><ComboBoxItem Content="Copy (Original)" IsSelected="True"/><ComboBoxItem Content="AAC (128k)"/><ComboBoxItem Content="AAC (192k)"/></ComboBox><TextBlock Text="On Failure" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboOnFail"><ComboBoxItem Content="Move to 'Unoptimizable'" IsSelected="True"/><ComboBoxItem Content="Delete File"/><ComboBoxItem Content="Ignore (Keep Original)"/></ComboBox></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="4. SESSION OPTIONS" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><CheckBox x:Name="chkResume" Content="Enable Resume Functionality" IsChecked="True" Margin="0,0,0,8"/><CheckBox x:Name="chkCache" Content="Enable Cache for Faster Processing" IsChecked="True" Margin="0,0,0,8"/><CheckBox x:Name="chkLog" Content="Enable Log" IsChecked="True"/></StackPanel></Border>
+            </StackPanel></ScrollViewer>
+            <Grid Grid.Column="1"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="220"/></Grid.RowDefinitions>
+                <UniformGrid Grid.Row="0" Columns="4" Margin="0,0,0,20">
+                    <Border Style="{StaticResource CardStyle}" Margin="0,0,8,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="FILES" FontSize="9" Foreground="$($Theme.TextSub)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statFiles" Text="0" FontSize="20" FontWeight="Bold"/></StackPanel></Border>
+                    <Border Style="{StaticResource CardStyle}" Margin="4,0,4,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="SAVED" FontSize="9" Foreground="$($Theme.Success)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statSaved" Text="0 MB" FontSize="20" FontWeight="Bold" Foreground="$($Theme.Success)"/></StackPanel></Border>
+                    <Border Style="{StaticResource CardStyle}" Margin="4,0,4,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="EFFICIENCY" FontSize="9" Foreground="$($Theme.Accent)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statEff" Text="0%" FontSize="20" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel></Border>
+                    <Border Style="{StaticResource CardStyle}" Margin="8,0,0,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="VMAF" FontSize="9" Foreground="$($Theme.TextSub)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statVmaf" Text="---" FontSize="20" FontWeight="Bold"/></StackPanel></Border>
+                </UniformGrid>
+                <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0"><DataGrid x:Name="dgFiles" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" SelectionMode="Single" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="Filename" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="Old Size" Binding="{Binding OldSize}" Width="80"/><DataGridTextColumn Header="New Size" Binding="{Binding NewSize}" Width="80"/><DataGridTextColumn Header="Saving" Binding="{Binding Saving}" Width="70"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="$($Theme.Success)"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="HorizontalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn><DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/></DataGrid.Columns></DataGrid></Border>
+                <Border Grid.Row="2" Background="$($Theme.InputBg)" CornerRadius="8" Padding="12" Margin="0,20,0,0" BorderBrush="$($Theme.Border)" BorderThickness="1"><TextBox x:Name="txtLogs" Background="Transparent" Foreground="$($Theme.TextMain)" BorderThickness="0" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11"/></Border>
+            </Grid>
+        </Grid>
+        <Grid Grid.Row="2" Margin="0,25,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><ProgressBar x:Name="progressMain" Width="400" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,0,25,0" Background="$($Theme.ProgressBg)" Foreground="$($Theme.Accent)" BorderThickness="0"/><TextBlock x:Name="lblStatus" Text="Ready" Foreground="$($Theme.TextSub)" FontWeight="SemiBold"/></StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="btnStop" Content="STOP" Style="{StaticResource StopButtonStyle}" Width="100" Margin="0,0,15,0" Visibility="Collapsed"/>
+                <Button x:Name="btnStart" Content="START PRO OPTIMIZATION" Style="{StaticResource PrimaryButtonStyle}" Width="280"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>
+"@
+
+$window = [Windows.Markup.XamlReader]::Parse($xaml_str)
+if ($null -eq $window) { throw "WPF Window failed to load!" }
+
+$txtPath=$window.FindName("txtPath"); $btnBrowse=$window.FindName("btnBrowse"); $chkRecursive=$window.FindName("chkRecursive"); $chkVmaf=$window.FindName("chkVmaf"); $cardVmaf=$window.FindName("cardVmaf"); $cardManual=$window.FindName("cardManual"); $comboEncoder=$window.FindName("comboEncoder"); $comboContainer=$window.FindName("comboContainer"); $sliderVmaf=$window.FindName("sliderVmaf"); $lblVmafTarget=$window.FindName("lblVmafTarget"); $comboSamples=$window.FindName("comboSamples"); $comboProbeDur=$window.FindName("comboProbeDur"); $txtQualityLadder=$window.FindName("txtQualityLadder"); $comboPreset=$window.FindName("comboPreset"); $comboAudio=$window.FindName("comboAudio"); $comboOnFail=$window.FindName("comboOnFail"); $chkResume=$window.FindName("chkResume"); $chkCache=$window.FindName("chkCache"); $chkLog=$window.FindName("chkLog"); $statFiles=$window.FindName("statFiles"); $statSaved=$window.FindName("statSaved"); $statEff=$window.FindName("statEff"); $statVmaf=$window.FindName("statVmaf"); $dgFiles=$window.FindName("dgFiles"); $txtLogs=$window.FindName("txtLogs"); $progressMain=$window.FindName("progressMain"); $lblStatus=$window.FindName("lblStatus"); $btnStart=$window.FindName("btnStart"); $btnStop=$window.FindName("btnStop")
+
+
+$global:logEnabled=$false; $global:logFilePath=""; $global:videoFiles=@(); $global:stopRequested=$false; $global:StopSignal = New-Object 'bool[]' 1; $global:StopSignal[0] = $false
+$knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg')
+
+$availableEncoders = @(
+    @{ ID="1"; Name="NVIDIA AV1 (NVENC)"; Codec="av1_nvenc"; Mode="cq"; Rank=1; Supported=$false }
+    @{ ID="2"; Name="NVIDIA HEVC (NVENC)"; Codec="hevc_nvenc"; Mode="cq"; Rank=2; Supported=$false }
+    @{ ID="3"; Name="NVIDIA H.264 (NVENC)"; Codec="h264_nvenc"; Mode="cq"; Rank=3; Supported=$false }
+    @{ ID="4"; Name="AMD AV1 (AMF)"; Codec="av1_amf"; Mode="qp"; Rank=4; Supported=$false }
+    @{ ID="5"; Name="AMD HEVC (AMF)"; Codec="hevc_amf"; Mode="qp"; Rank=5; Supported=$false }
+    @{ ID="6"; Name="AMD H.264 (AMF)"; Codec="h264_amf"; Mode="qp"; Rank=6; Supported=$false }
+    @{ ID="7"; Name="Intel AV1 (QSV)"; Codec="av1_qsv"; Mode="global_quality"; Rank=7; Supported=$false }
+    @{ ID="8"; Name="Intel HEVC (QSV)"; Codec="hevc_qsv"; Mode="global_quality"; Rank=8; Supported=$false }
+    @{ ID="9"; Name="Intel H.264 (QSV)"; Codec="h264_qsv"; Mode="global_quality"; Rank=9; Supported=$false }
+    @{ ID="10"; Name="AV1 SVT (CPU)"; Codec="libsvtav1"; Mode="crf"; Rank=10; Supported=$true }
+    @{ ID="11"; Name="HEVC (CPU - libx265)"; Codec="libx265"; Mode="crf"; Rank=11; Supported=$true }
+    @{ ID="12"; Name="H.264 (CPU - libx264)"; Codec="libx264"; Mode="crf"; Rank=12; Supported=$true }
+)
+
+$presetOptions = @{ "nvenc"=@("p1","p2","p3","p4","p5","p6","p7"); "libsvtav1"=@("0","1","2","3","4","5","6","7","8","9","10","11","12","13"); "cpu"=@("ultrafast","superfast","veryfast","faster","fast","medium","slow","slower","veryslow","placebo"); "qsv"=@("veryfast","faster","fast","balanced","slow","slower","veryslow"); "amf"=@("speed","balanced","quality") }
+
+function Add-Log { param([string]$msg) $window.Dispatcher.Invoke({ $ts="$(Get-Date -Format 'HH:mm:ss') - $msg"; $txtLogs.AppendText("$ts`r`n"); $txtLogs.ScrollToEnd(); if ($global:logEnabled -and $global:logFilePath) { try { Add-Content -Path $global:logFilePath -Value $ts -ErrorAction SilentlyContinue } catch {} } }) }
+function Format-Bytes { param([long]$Bytes) if ($Bytes -ge 1GB) { return "$([math]::Round($Bytes / 1GB, 2)) GB" }; if ($Bytes -ge 1MB) { return "$([math]::Round($Bytes / 1MB, 2)) MB" }; if ($Bytes -ge 1KB) { return "$([math]::Round($Bytes / 1KB, 2)) KB" }; return "$Bytes B" }
+
+function Update-PresetList {
+    $sel=$comboEncoder.SelectedItem; if (-not $sel) { return }; $enc=$sel.Tag; $codec=$enc.Codec
+    $list = if ($codec -match "nvenc") { $presetOptions["nvenc"] } elseif ($codec -match "libsvtav1") { $presetOptions["libsvtav1"] } elseif ($codec -match "libx265|libx264") { $presetOptions["cpu"] } elseif ($codec -match "qsv") { $presetOptions["qsv"] } elseif ($codec -match "amf") { $presetOptions["amf"] } else { @("none") }
+    $comboPreset.Items.Clear(); foreach ($p in $list) { $comboPreset.Items.Add($p) }
+    if ($codec -match "nvenc") { $comboPreset.SelectedItem="p5" } elseif ($codec -match "libsvtav1") { $comboPreset.SelectedItem="6" } elseif ($codec -match "libx265|libx264") { $comboPreset.SelectedItem="slow" } else { $comboPreset.SelectedIndex=0 }
+}
+
+function Scan-Files {
+    $path=$txtPath.Text; if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) { return }
+    $files=Get-ChildItem -LiteralPath $path -File -Recurse:$chkRecursive.IsChecked | Where-Object { $knownVideoExtensions -contains $_.Extension.ToLower() }
+    $global:videoFiles = $files | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; FullName=$_.FullName; Directory=$_.DirectoryName; Extension=$_.Extension; OldSize=(Format-Bytes $_.Length); OldSizeBytes=$_.Length; NewSize="---"; Saving="---"; Status="Queued" } }
+    $dgFiles.ItemsSource=[System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]$global:videoFiles; $statFiles.Text=$global:videoFiles.Count
+}
+
+$txtPath.Text=$PWD.Path; Add-Log "Detecting hardware encoders..."
+$ffmpegEncoders=(ffmpeg -encoders 2>&1 | Out-String); $comboEncoder.Items.Clear()
+foreach ($enc in $availableEncoders) {
+    $color="#6E7781"; $status="Not Found"
+    if ($enc.Codec -match "libsvtav1|libx265|libx264") { $enc.Supported=$true; $color="#2DA44E"; $status="Software (Confirmed)" }
+    elseif ($ffmpegEncoders -match "\b$($enc.Codec)\b") {
+        $dummy=@("-v","error","-f","lavfi","-i","color=black:s=1280x720:r=24","-pix_fmt","yuv420p","-vframes","1","-c:v",$enc.Codec,"-f","null","-")
+        $null = & ffmpeg @dummy 2>&1
+        if ($LASTEXITCODE -eq 0) { $enc.Supported=$true; $color="#2DA44E"; $status="Hardware (Confirmed)" } else { $enc.Supported=$false; $color="#D29922"; $status="Hardware (Init failed)" }
+    }
+    $item=New-Object System.Windows.Controls.ComboBoxItem; $stack=New-Object System.Windows.Controls.StackPanel; $stack.Orientation="Horizontal"
+    $circle=New-Object System.Windows.Controls.Border; $circle.Width=10; $circle.Height=10; $circle.CornerRadius=5; $circle.Margin="0,0,10,0"; $circle.Background=[System.Windows.Media.BrushConverter]::new().ConvertFromString($color)
+    $text=New-Object System.Windows.Controls.TextBlock; $text.Text=$enc.Name; $text.Foreground=[System.Windows.Media.BrushConverter]::new().ConvertFromString($Theme.TextMain)
+    $stack.Children.Add($circle); $stack.Children.Add($text); $item.Content=$stack; $item.Tag=$enc; $item.ToolTip=$status; $comboEncoder.Items.Add($item)
+}
+$bestMatch=$null; foreach($item in $comboEncoder.Items) { if ($item.ToolTip -match "Confirmed" -and $item.Tag.Codec -match "nvenc|amf|qsv") { if ($bestMatch -eq $null -or $item.Tag.Rank -lt $bestMatch.Tag.Rank) { $bestMatch=$item } } }
+if ($bestMatch) { $comboEncoder.SelectedItem=$bestMatch } else { $comboEncoder.SelectedIndex=0 }
+Update-PresetList; Scan-Files
+
+$btnBrowse.Add_Click({ Add-Type -AssemblyName System.Windows.Forms; $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.SelectedPath=$txtPath.Text; if ($dialog.ShowDialog() -eq "OK") { $txtPath.Text=$dialog.SelectedPath; Scan-Files } })
+$chkResume.Add_Click({ if ($chkResume.IsChecked) { $chkCache.IsChecked=$true } }); $chkCache.Add_Click({ if (-not $chkCache.IsChecked) { $chkResume.IsChecked=$false } })
+$chkVmaf.Add_Click({ if ($chkVmaf.IsChecked) { $cardVmaf.Visibility="Visible"; $cardManual.Visibility="Collapsed" } else { $cardVmaf.Visibility="Collapsed"; $cardManual.Visibility="Visible" } })
+$sliderVmaf.Add_ValueChanged({ $lblVmafTarget.Text=[int]$sliderVmaf.Value }); $comboEncoder.Add_SelectionChanged({ Update-PresetList })
+
+$btnStop.Add_Click({ $global:stopRequested=$true; $btnStop.IsEnabled=$false; Add-Log "[STOP] Cancellation requested. Cleaning up current file..." })
+
+$btnStart.Add_Click({
+    if ($global:videoFiles.Count -eq 0) { return }; $btnStart.IsEnabled=$false; $btnBrowse.IsEnabled=$false; $btnStop.Visibility="Visible"; $btnStop.IsEnabled=$true; $global:stopRequested=$false; $selEnc=$comboEncoder.SelectedItem.Tag; $global:logEnabled=$chkLog.IsChecked
+    $workDir=Join-Path $txtPath.Text ".Video Optimizer"; if ($chkCache.IsChecked -or $chkLog.IsChecked) { if (-not (Test-Path $workDir)) { $hd=New-Item -ItemType Directory -Path $workDir -Force; $hd.Attributes="Directory","Hidden" } }
+    $cacheFile=Join-Path $workDir "Cache.json"; $global:logFilePath=Join-Path $workDir "Log.txt"
+    $cache=@{}; if ($chkResume.IsChecked -and (Test-Path $cacheFile)) { try { $json=Get-Content $cacheFile -Raw | ConvertFrom-Json; foreach($e in $json){ if($e.Path){$cache[$e.Path.ToLowerInvariant()]=$e} } } catch {} }
+    $settingsKey="$($selEnc.Codec)|$($comboPreset.SelectedItem)|$($sliderVmaf.Value)|$($comboAudio.Text)"
+    $config=@{ Encoder=$selEnc.Codec; Mode=$selEnc.Mode; VmafEnabled=$chkVmaf.IsChecked; VmafTarget=[int]$sliderVmaf.Value; VmafSamples=switch($comboSamples.SelectedIndex){0{1};2{5};default{3}}; VmafDur=switch($comboProbeDur.SelectedIndex){0{3};2{10};default{5}}; QualityLadder=$txtQualityLadder.Text -split ','; Preset=$comboPreset.SelectedItem; Container=switch($comboContainer.SelectedIndex){1{".mkv"};2{".mov"};3{"Original"};default{".mp4"}}; Audio=switch($comboAudio.SelectedIndex){1{"aac 128k"};2{"aac 192k"};default{"copy"}}; OnFail=switch($comboOnFail.SelectedIndex){1{"Delete"};2{"Ignore"};default{"Move"}}; CacheEnabled=$chkCache.IsChecked; CacheFile=$cacheFile; Cache=$cache; SettingsKey=$settingsKey; ResumeEnabled=$chkResume.IsChecked }
+    $global:processedCount=0; $global:totalSavedBytes=0; $global:totalOriginalBytes=0
+    $global:StopSignal[0] = $false
+    
+    $job={ param($files, $config, $stopSignal)
+        try {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            
+            function Run-FFmpegWithProgress {
+                param([string[]]$args)
+                try {
+                    $p = New-Object System.Diagnostics.Process
+                    $p.StartInfo.FileName = "ffmpeg"
+                    $p.StartInfo.Arguments = ($args -join " ")
+                    $p.StartInfo.UseShellExecute = $false
+                    $p.StartInfo.CreateNoWindow = $true
+                    $p.StartInfo.RedirectStandardError = $true
+                    $p.StartInfo.RedirectStandardOutput = $true
+                    $p.Start() | Out-Null
+                    
+                    while (!$p.HasExited) {
+                        if ($stopSignal[0]) { try { $p.Kill() } catch {}; return $false }
+                        Start-Sleep -Milliseconds 50
+                    }
+                    return ($p.ExitCode -eq 0)
+                } catch {
+                    Write-Output @{ Type="Log"; Msg="[ERROR] FFmpeg process failed: $_" }
+                    return $false
+                }
+            }
+
+            Write-Output @{ Type="Log"; Msg=">>> BACKEND PROCESS STARTED: $($files.Count) files" }
+        foreach ($f in $files) {
+            if ($stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[STOP] Process aborted by user." }; break }
+            $idx = [array]::IndexOf($files, $f)
+            Write-Output @{ Index=$idx; Type="Update"; Status="In Progress" }
+            Write-Output @{ Type="Log"; Msg="--- Processing: $($f.Name) ---" }
+            
+            $key=$f.FullName.ToLowerInvariant(); $sig="$($f.OldSizeBytes)|$((Get-Item -LiteralPath $f.FullName).LastWriteTimeUtc.Ticks)"
+            if ($config.ResumeEnabled -and $config.Cache.ContainsKey($key)) { 
+                $cached=$config.Cache[$key]; 
+                if ($cached.Signature -eq $sig -and $cached.SettingsKey -eq $config.SettingsKey) { 
+                    Write-Output @{ Type="Log"; Msg="[SKIP] Found in cache with matching settings." }
+                    Write-Output @{ Index=$idx; Success=$false; Msg="Cached Skip"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }; continue 
+                } 
+            }
+            
+            $res=@{ Success=$false; NewSize=0; Msg="Failed"; FinalVmaf="---" }; $dir=$f.Directory; $ext=if($config.Container -eq "Original"){$f.Extension}else{$config.Container}; $tempOut=Join-Path $dir ($f.Name+".tmp"+$ext); $finalOut=Join-Path $dir ($f.Name.Replace($f.Extension,"")+"_opt"+$ext)
+            
+            if (![string]::IsNullOrWhiteSpace($f.FullName)) {
+                if ($config.VmafEnabled) {
+                    Write-Output @{ Type="Log"; Msg="[PROBE] Starting VMAF search..." }
+                    $durIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
+                    if($durIn -match "^\d+(\.\d+)?$"){ $duration=[double]$durIn } else { $duration=60 }
+                    $samplePoints = if($config.VmafSamples -eq 1){ @($duration/2) } else { 1..$config.VmafSamples | ForEach-Object { ($duration/($config.VmafSamples+1))*$_ } }
+                    
+                    $bestCQ=26; $bestScore=0; $currentStep=4; $lastDir=0; $currentCQ=26
+                    for ($attempt=1; $attempt -le 15; $attempt++) {
+                        if ($stopSignal[0]) { break }
+                        Write-Output @{ Type="Log"; Msg="[PROBE] Attempt $attempt : Testing CQ $currentCQ" }
+                        $scores=@()
+                        foreach($sp in $samplePoints){
+                            if ($stopSignal[0]) { break }
+                            $sampleSrc=Join-Path $env:TEMP ("v_s_"+[guid]::NewGuid().ToString().Substring(0,8)+".mkv"); $sampleEnc=Join-Path $env:TEMP ("v_e_"+[guid]::NewGuid().ToString().Substring(0,8)+".mkv")
+                            try {
+                                & ffmpeg -y -loglevel error -ss $sp -t $config.VmafDur -i "$($f.FullName)" -c:v copy -an $sampleSrc
+                                if ($stopSignal[0]) { break }
+                                & ffmpeg -y -loglevel error -i $sampleSrc -c:v $config.Encoder -preset $config.Preset "-$($config.Mode)" $currentCQ $sampleEnc
+                                if ($stopSignal[0]) { break }
+                                $vmafOut = (& ffmpeg -i $sampleEnc -i $sampleSrc -filter_complex "libvmaf" -f null - 2>&1 | Out-String)
+                                if ($vmafOut -match "VMAF score: (\d+\.\d+)") { $scores += [double]$matches[1] }
+                            } finally { if(Test-Path $sampleSrc){Remove-Item $sampleSrc -Force}; if(Test-Path $sampleEnc){Remove-Item $sampleEnc -Force} }
+                        }
+                        if ($stopSignal[0]) { break }
+                        if($scores.Count -gt 0){
+                            $avgScore=($scores | Measure-Object -Average).Average
+                            Write-Output @{ Type="Log"; Msg="[PROBE] Average Score: $([math]::Round($avgScore,2))" }
+                            Write-Output @{ Type="VmafUpdate"; Score=$avgScore }
+                            if ([math]::Abs($avgScore-$config.VmafTarget)-lt [math]::Abs($bestScore-$config.VmafTarget)) { $bestCQ=$currentCQ; $bestScore=$avgScore }
+                            if ([math]::Abs($avgScore-$config.VmafTarget)-le 0.5) { break }
+                            $direction=if($avgScore-gt $config.VmafTarget){1}else{-1}
+                            if($lastDir -ne 0 -and $direction -ne $lastDir){ if($currentStep -gt 1){ $currentStep=[math]::Floor($currentStep/2) }else{ break } }
+                            $lastDir=$direction; $currentCQ+=($direction*$currentStep)
+                            if($currentCQ -lt 0 -or $currentCQ -gt 51){break}
+                        } else { break }
+                    }
+                    $activeQualities=@($bestCQ); $res.FinalVmaf=[math]::Round($bestScore,1)
+                    if (-not $stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[PROBE] Optimal CQ found: $bestCQ" } }
+                } else { $activeQualities=$config.QualityLadder }
+                
+                foreach ($q in $activeQualities) {
+                    if ($stopSignal[0]) { break }
+                    Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (CQ: $q)..." }
+                    $ffArgs=@("-y","-loglevel","info","-stats","-i",$f.FullName,"-c:v",$config.Encoder,"-$($config.Mode)",$q); if($config.Preset -and $config.Preset -ne "none"){$ffArgs+=@("-preset",$config.Preset)}; if($config.Audio -eq "copy"){$ffArgs+=@("-c:a","copy")}else{$parts=$config.Audio.Split(" ");$ffArgs+=@("-c:a",$parts[0],"-b:a",$parts[1])}; $ffArgs+=$tempOut
+                    
+                    $success = Run-FFmpegWithProgress -args $ffArgs
+                    
+                    if ($success -and (Test-Path $tempOut)) {
+                        if ($stopSignal[0]) { Remove-Item $tempOut -Force; break }
+                        Write-Output @{ Type="Log"; Msg="[VALIDATE] Verifying output integrity..." }
+                        $newSize=(Get-Item $tempOut).Length; 
+                        if ($newSize -lt $f.OldSizeBytes) { 
+                            $inDur = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim(); 
+                            $outDur = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOut" 2>$null | Out-String).Trim(); 
+                            if($inDur -and $outDur -and [math]::Abs([double]$inDur-[double]$outDur)-le 2){ 
+                                Move-Item $tempOut $finalOut -Force; $res.Success=$true; $res.NewSize=$newSize; 
+                                Write-Output @{ Type="Log"; Msg="[SUCCESS] Optimization complete. Saved $((($f.OldSizeBytes-$newSize)/1MB).ToString('F2')) MB" }
+                                break 
+                            } else { Write-Output @{ Type="Log"; Msg="[FAIL] Duration mismatch detected." } }
+                        } else { Write-Output @{ Type="Log"; Msg="[FAIL] Output larger than source." } }
+                        Remove-Item $tempOut -Force
+                    } else { 
+                        if (Test-Path $tempOut) { Remove-Item $tempOut -Force }
+                        if (-not $stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[FAIL] FFmpeg exited with error." } }
+                    }
+                }
+            } else { $res.Msg = "Path Error" }
+            
+            if ($config.CacheEnabled) { if (-not $res.Success -and $config.OnFail -eq "Ignore") { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Reason=$res.Msg; LastTried=(Get-Date).ToString("o") } } elseif ($res.Success) { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Status="Optimized" } }; $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile }
+            
+            if ($stopSignal[0]) { 
+                Write-Output @{ Index=$idx; Success=$false; Msg="Stopped"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }
+                break 
+            }
+            Write-Output @{ Index=$idx; Success=$res.Success; NewSize=$res.NewSize; Msg=$res.Msg; Vmaf=$res.FinalVmaf; Total=$files.Count; File=$f.Name; Type="Result" }
+        }
+        Write-Output @{ Type="Log"; Msg=">>> BACKEND PROCESS COMPLETED IN $($sw.Elapsed.ToString('hh\:mm\:ss'))" }
+        } catch {
+            Write-Output @{ Type="Log"; Msg="[CRITICAL ERROR] Job crashed: $_" }
+            Write-Output @{ Type="Log"; Msg="StackTrace: $($_.ScriptStackTrace)" }
+        }
+    }
+    
+    $powershell=[PowerShell]::Create().AddScript($job).AddArgument($global:videoFiles).AddArgument($config).AddArgument($global:StopSignal); $asyncResult=$powershell.BeginInvoke()
+    $timer=New-Object System.Windows.Threading.DispatcherTimer; $timer.Interval=[TimeSpan]::FromMilliseconds(200)
+    $timer.Add_Tick({
+        $global:StopSignal[0] = $global:stopRequested
+        if ($null -ne $powershell) {
+            # Read output stream
+            if ($null -ne $powershell.Streams.Output) {
+                $outputs = $powershell.Streams.Output.ReadAll()
+                foreach ($out in $outputs) {
+                    if ($out.Type -eq "VmafUpdate") { $statVmaf.Text=[math]::Round($out.Score,1); continue }
+                    if ($out.Type -eq "Log") { Add-Log $out.Msg; continue }
+                    if ($out.Type -eq "Progress") { $lblStatus.Text = $out.Msg; continue }
+                    if ($out.Type -eq "Update") { $global:videoFiles[$out.Index].Status = $out.Status; continue }
+                    if ($out.Type -eq "Result") {
+                        $item=$global:videoFiles[$out.Index]
+                        if ($out.Success) { $item.Status="Done"; $item.NewSize=Format-Bytes $out.NewSize; $saving=$item.OldSizeBytes-$out.NewSize; $item.Saving="$([Math]::Round(($saving/$item.OldSizeBytes)*100,1))%"; $global:totalSavedBytes+=$saving; $global:totalOriginalBytes+=$item.OldSizeBytes; Add-Log "Success: $($out.File) [VMAF: $($out.Vmaf)]" } else { $item.Status=$out.Msg; $item.Saving="0%" }
+                        $global:processedCount++; $statSaved.Text=Format-Bytes $global:totalSavedBytes; if($global:totalOriginalBytes -gt 0){$statEff.Text="$([Math]::Round(($global:totalSavedBytes/$global:totalOriginalBytes)*100,1))%"}
+                        $pct=[Math]::Round(($global:processedCount/$out.Total)*100); $progressMain.Value=$pct;
+                    }
+                }
+            }
+            
+            # Read error stream for debugging
+            if ($null -ne $powershell.Streams.Error) {
+                $errors = $powershell.Streams.Error.ReadAll()
+                foreach ($err in $errors) {
+                    Add-Log "[JOB ERROR] $err"
+                }
+            }
+            
+            $dgFiles.Items.Refresh()
+            if ($asyncResult.IsCompleted) { 
+                $timer.Stop()
+                # Final read to get any remaining output
+                $outputs = $powershell.Streams.Output.ReadAll()
+                foreach ($out in $outputs) { if ($out.Type -eq "Log") { Add-Log $out.Msg } }
+                $errors = $powershell.Streams.Error.ReadAll()
+                foreach ($err in $errors) { Add-Log "[JOB ERROR] $err" }
+                
+                $btnStart.IsEnabled=$true; $btnBrowse.IsEnabled=$true; $btnStop.Visibility="Collapsed"; $lblStatus.Text=if($global:stopRequested){"Stopped"}else{"Finished"};  $powershell.Dispose()
+                return 
+            }
+        }
+    })
+    $timer.Start()
+$window.ShowDialog() | Out-Null

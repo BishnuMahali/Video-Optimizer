@@ -165,6 +165,8 @@ class VideoOptimizerEngine:
 
         best_cq = 26
         best_score = 0
+        max_score = 0
+        max_score_cq = 26
         current_step = 4
         last_dir = 0
         current_cq = 26
@@ -213,6 +215,10 @@ class VideoOptimizerEngine:
                 avg_score = sum(scores) / len(scores)
                 self.log(f"[PROBE] Average Visual Score: {avg_score:.2f}")
                 
+                if avg_score > max_score:
+                    max_score = avg_score
+                    max_score_cq = current_cq
+                
                 if abs(avg_score - target_vmaf) < abs(best_score - target_vmaf):
                     best_cq = current_cq
                     best_score = avg_score
@@ -236,7 +242,7 @@ class VideoOptimizerEngine:
             else:
                 break
                 
-        return best_cq, best_score
+        return best_cq, best_score, max_score, max_score_cq
 
     def run_ffmpeg_with_progress(self, args, file_index, total_files):
         cmd = ['ffmpeg', '-progress', 'pipe:1'] + args
@@ -320,11 +326,29 @@ class VideoOptimizerEngine:
         # 5. Core Processing Loop
         if config.get('VmafEnabled'):
             vmaf_ladder = config.get('VmafLadder', [config.get('VmafTarget', 93)])
+            max_achievable_vmaf = 100.0
+            max_vmaf_cq = None
+            
             for target in vmaf_ladder:
                 if self.stop_requested: break
                 
-                best_cq, best_score_val = self.run_vmaf_search(file_path, config, target)
-                res['FinalVmaf'] = f"{best_score_val:.1f}"
+                if target > max_achievable_vmaf + 0.5:
+                    self.log(f"[SKIP] Skipping VMAF Target {target} (Ceiling is {max_achievable_vmaf:.1f})")
+                    continue
+                
+                if max_vmaf_cq is not None and abs(target - max_achievable_vmaf) <= 0.5:
+                    self.log(f"[PROBE] Target {target} is close to known ceiling {max_achievable_vmaf:.1f}. Using CQ {max_vmaf_cq}.")
+                    best_cq = max_vmaf_cq
+                    res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
+                else:
+                    best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target)
+                    res['FinalVmaf'] = f"{best_score_val:.1f}"
+                    
+                    if max_score_val < target - 0.5:
+                        self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping encode.")
+                        max_achievable_vmaf = max_score_val
+                        max_vmaf_cq = max_score_cq
+                        continue
                 
                 self.log(f"[ENCODE] Running final encode (VMAF Target: {target}, CQ: {best_cq})...")
                 success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files)
@@ -497,6 +521,21 @@ class VideoOptimizerGUI(ctk.CTk):
         self.detect_encoders()
         self.load_config() # Load after UI setup to populate fields
         self.scan_files()
+        
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        if self.is_processing:
+            self.stop_optimization()
+            self.add_log("[WARN] Gracefully stopping before exit... Please wait.")
+            # Wait for thread to finish
+            for _ in range(30):
+                if not self.is_processing:
+                    break
+                self.update()
+                time.sleep(0.1)
+        self.destroy()
+        sys.exit(0)
 
     def setup_ui(self):
         # Configure grid layout (1x2)
@@ -1076,7 +1115,8 @@ class VideoOptimizerGUI(ctk.CTk):
                     self.total_original_bytes += f['OldSizeBytes']
                     
                     saving_pct = (saving_bytes / f['OldSizeBytes']) * 100
-                    self.update_tree_item(i, new_size=self.engine.format_bytes(res['NewSize']), saving=f"{saving_pct:.1f}%", status="Done")
+                    status_text = "Done" if res.get('Msg') == 'Optimized' else res.get('Msg', 'Done')
+                    self.update_tree_item(i, new_size=self.engine.format_bytes(res['NewSize']), saving=f"{saving_pct:.1f}%", status=status_text)
                     
                     # Update Stats
                     self.after(0, self.update_stats)
@@ -1130,6 +1170,37 @@ class VideoOptimizerGUI(ctk.CTk):
         status = "Finished" if not self.engine.stop_requested else "Stopped"
         self.update_status_label(status)
         self.add_log(f">>> Process {status}")
+        
+        # Generate Summary
+        processed = 0
+        skipped = 0
+        failed = 0
+        unprocessed = 0
+        
+        for item_id in self.tree.get_children():
+            item_status = self.tree.item(item_id, "values")[4]
+            if item_status == "Done":
+                processed += 1
+            elif item_status in ["Cached Skip", "Already Optimized"]:
+                skipped += 1
+            elif item_status in ["Queued", "In Progress"]:
+                unprocessed += 1
+            else:
+                failed += 1
+                
+        saved_str = self.engine.format_bytes(self.total_saved_bytes)
+        
+        self.add_log("\n" + "="*50)
+        self.add_log("               OPTIMIZATION SUMMARY")
+        self.add_log("="*50)
+        self.add_log(f" Files Processed   : {processed}")
+        self.add_log(f" Files Skipped     : {skipped}")
+        self.add_log(f" Files Failed      : {failed}")
+        if unprocessed > 0:
+            self.add_log(f" Files Unprocessed : {unprocessed}")
+        self.add_log("-" * 50)
+        self.add_log(f" Total Space Saved : {saved_str}")
+        self.add_log("="*50 + "\n")
 
     def stop_optimization(self):
         self.engine.request_stop()

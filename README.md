@@ -46,14 +46,26 @@ This release marks the transition to **Python as the primary interface**, while 
 
 ---
 
-## 💻 PowerShell Mode (Legacy/CLI)
+## 💻 PowerShell Mode (Advanced TUI/CLI)
 
-The original PowerShell engine remains available for CLI-focused workflows. It can be run directly or via the web:
+While Python is the primary Pro interface, the PowerShell version has been upgraded to **v2.1.0** with full feature parity for CLI-focused workflows.
+
+### 🌟 New PowerShell TUI Features:
+- **Interactive Menu:** Full keyboard-driven interface (Arrow keys, Enter).
+- **Settings-Aware Resume:** Intelligent caching skips files already optimized or failed with same settings.
+- **Interactivity:** Press **'S'** to skip current file or **'Q'** to quit session gracefully during encoding.
+- **Hardware-Accelerated VMAF:** Probes now use GPU decoding/encoding for much faster quality targeting.
+- **Toggle Controls:** Directly toggle "Skip Efficient" and "Resume" from the TUI.
 
 ### Quick Run (IRM):
 ```powershell
 irm https://raw.githubusercontent.com/BishnuMahali/Video-Optimizer/main/Video-Optimizer.ps1 | iex
 ```
+
+### Local Run:
+1.  Run `Video-Optimizer.ps1` in PowerShell.
+2.  Adjust settings using Arrow Keys.
+3.  Select **[ Start Optimization ]**.
 
 ---
 
