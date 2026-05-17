@@ -248,15 +248,25 @@ function Save-UnoptimizableCache {
     )
 
     $key = Get-FileCacheKey $Path
-    $Cache[$key] = [ordered]@{
-        Path = $Path
-        Signature = $Signature
-        SettingsKey = $SettingsKey
-        Reason = $Reason
-        LastTried = (Get-Date).ToString("o")
+    if (-not $Cache.Contains($key)) {
+        $Cache[$key] = [ordered]@{ Path = $Path }
+    }
+    
+    $entry = $Cache[$key]
+    
+    if ($entry -is [PSCustomObject]) {
+        $entry | Add-Member -MemberType NoteProperty -Name "Signature" -Value $Signature -Force
+        $entry | Add-Member -MemberType NoteProperty -Name "SettingsKey" -Value $SettingsKey -Force
+        $entry | Add-Member -MemberType NoteProperty -Name "Reason" -Value $Reason -Force
+        $entry | Add-Member -MemberType NoteProperty -Name "LastTried" -Value (Get-Date).ToString("o") -Force
+    } else {
+        $entry.Signature = $Signature
+        $entry.SettingsKey = $SettingsKey
+        $entry.Reason = $Reason
+        $entry.LastTried = (Get-Date).ToString("o")
     }
 
-    $Cache.Values | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
+    $Cache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
 }
 
 function Write-SummaryBox {
@@ -409,10 +419,66 @@ function Find-OptimalCq {
         [string]$InputPath,
         [string]$Codec,
         [string]$Preset,
-        [double]$TargetVmaf
+        [double]$TargetVmaf,
+        [hashtable]$FullCache,
+        [string]$CacheFile,
+        [string]$Signature
     )
 
     Write-Host "  $($S.Bullet) Probing VMAF quality (Target: $TargetVmaf)... " -ForegroundColor Gray
+    
+    $fileKey = Get-FileCacheKey $InputPath
+    $probeKey = "codec=$Codec|preset=$Preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
+    $probeCache = $null
+
+    if ($null -ne $FullCache -and $global:enableCache) {
+        if (-not $FullCache.Contains($fileKey)) {
+            $FullCache[$fileKey] = [ordered]@{ Path = $InputPath; Signature = $Signature }
+        }
+        $fileCache = $FullCache[$fileKey]
+        
+        $sigMatch = $false
+        if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('Signature').Count -gt 0) {
+            if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
+        } elseif ($fileCache -is [hashtable] -and $fileCache.Contains('Signature')) {
+            if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
+        }
+        
+        if (-not $sigMatch) {
+            if ($fileCache -is [PSCustomObject]) {
+                $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
+                $fileCache | Add-Member -MemberType NoteProperty -Name "Signature" -Value $Signature -Force
+            } else {
+                $fileCache.VmafProbeCache = @{}
+                $fileCache.Signature = $Signature
+            }
+        } else {
+            if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('VmafProbeCache').Count -eq 0) {
+                $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
+            } elseif ($fileCache -is [hashtable] -and -not $fileCache.Contains('VmafProbeCache')) {
+                $fileCache.VmafProbeCache = @{}
+            }
+        }
+        
+        $vpc = if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache } else { $fileCache.VmafProbeCache }
+        if ($vpc -is [PSCustomObject]) {
+            $hash = @{}
+            foreach ($p in $vpc.psobject.properties) { $hash[$p.Name] = $p.Value }
+            $vpc = $hash
+            if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache = $vpc } else { $fileCache.VmafProbeCache = $vpc }
+        }
+        
+        if (-not $vpc.Contains($probeKey)) {
+            $vpc[$probeKey] = @{ Probes = @{}; MaxAchievableVmaf = 0.0; MaxVmafCq = 26 }
+        }
+        $probeCache = $vpc[$probeKey]
+        if ($probeCache.Probes -is [PSCustomObject]) {
+            $ph = @{}
+            foreach ($p in $probeCache.Probes.psobject.properties) { $ph[$p.Name] = $p.Value }
+            $probeCache.Probes = $ph
+        }
+    }
+
     $currentCQ = [math]::Round(($global:vmafMinCQ + $global:vmafMaxCQ) / 2)
     $maxAttempts = 15
     $currentStep = $global:vmafStep
@@ -424,8 +490,26 @@ function Find-OptimalCq {
     $maxScoreCQ = $currentCQ
     
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-        $score = Get-VmafScore -InputPath $InputPath -Codec $Codec -CQ $currentCQ -Preset $Preset
-        Write-Host "     Pass $($attempt): CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
+        $strCq = [string]$currentCQ
+        
+        if ($null -ne $probeCache -and $probeCache.Probes.Contains($strCq)) {
+            $score = $probeCache.Probes[$strCq]
+            Write-Host "     Pass $($attempt): Cached CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor Cyan
+        } else {
+            $score = Get-VmafScore -InputPath $InputPath -Codec $Codec -CQ $currentCQ -Preset $Preset
+            Write-Host "     Pass $($attempt): CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
+            
+            if ($null -ne $probeCache -and $score -gt 0) {
+                $probeCache.Probes[$strCq] = $score
+                if ($score -gt $probeCache.MaxAchievableVmaf) {
+                    $probeCache.MaxAchievableVmaf = $score
+                    $probeCache.MaxVmafCq = $currentCQ
+                }
+                try {
+                    $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
+                } catch {}
+            }
+        }
         
         if ($score -gt $maxScore) {
             $maxScore = $score
@@ -974,6 +1058,36 @@ if ($totalFiles -eq 0) {
             $maxAchievableVmaf = 100.0
             $maxVmafCq = $null
 
+            $fileKey = Get-FileCacheKey $input
+            $probeKey = "codec=$videoCodec|preset=$global:preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
+            if ($global:enableCache -and $unoptimizableCache.Contains($fileKey)) {
+                $fileCache = $unoptimizableCache[$fileKey]
+                $sigMatch = $false
+                if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('Signature').Count -gt 0) {
+                    if ($fileCache.Signature -eq $fileSignature) { $sigMatch = $true }
+                } elseif ($fileCache -is [hashtable] -and $fileCache.Contains('Signature')) {
+                    if ($fileCache.Signature -eq $fileSignature) { $sigMatch = $true }
+                }
+                
+                if ($sigMatch) {
+                    $vpc = if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache } else { $fileCache.VmafProbeCache }
+                    if ($null -ne $vpc) {
+                        $vpcHash = $vpc
+                        if ($vpc -is [PSCustomObject]) {
+                            $vpcHash = @{}
+                            foreach ($p in $vpc.psobject.properties) { $vpcHash[$p.Name] = $p.Value }
+                        }
+                        if ($vpcHash.Contains($probeKey)) {
+                            $pc = $vpcHash[$probeKey]
+                            if ($pc.MaxAchievableVmaf -gt 0) {
+                                $maxAchievableVmaf = $pc.MaxAchievableVmaf
+                                $maxVmafCq = $pc.MaxVmafCq
+                            }
+                        }
+                    }
+                }
+            }
+
             foreach ($currentTarget in $vmafTargetsToTry) {
                 if ($global:vmafEnabled) {
                     if ($currentTarget -gt $maxAchievableVmaf + 0.5) {
@@ -987,7 +1101,7 @@ if ($totalFiles -eq 0) {
                         $activeQualityList = @($optimalCq)
                     } else {
                         Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                        $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget
+                        $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature
                         $optimalCq = $optimalResult.CQ
                         $lastBestScoreVal = $optimalResult.Score
                         

@@ -140,7 +140,7 @@ class VideoOptimizerEngine:
             self.log(f"[FAIL] VMAF calculation failed: {e}")
         return None
 
-    def run_vmaf_search(self, file_path, config, target_vmaf=None):
+    def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None):
         if target_vmaf is None:
             target_vmaf = config.get('VmafTarget', 93)
             
@@ -157,6 +157,29 @@ class VideoOptimizerEngine:
         if 'nvenc' in encoder: hw_decode_args = ['-hwaccel', 'cuda']
         elif 'qsv' in encoder: hw_decode_args = ['-hwaccel', 'qsv']
         elif 'amf' in encoder: hw_decode_args = ['-hwaccel', 'd3d11va']
+
+        # Probe Cache Setup
+        probe_key = f"codec={encoder}|preset={preset}|samples={samples_count}|dur={sample_dur}"
+        cache_key = str(file_path).lower()
+        probe_cache = None
+        
+        if config.get('CacheEnabled') and signature:
+            if 'Cache' not in config: config['Cache'] = {}
+            if cache_key not in config['Cache']: config['Cache'][cache_key] = {}
+            file_cache = config['Cache'][cache_key]
+            
+            if file_cache.get('Signature') != signature:
+                file_cache['VmafProbeCache'] = {}
+                file_cache['Signature'] = signature
+                
+            if 'VmafProbeCache' not in file_cache: file_cache['VmafProbeCache'] = {}
+            if probe_key not in file_cache['VmafProbeCache']:
+                file_cache['VmafProbeCache'][probe_key] = {
+                    'Probes': {},
+                    'MaxAchievableVmaf': 0.0,
+                    'MaxVmafCq': 26
+                }
+            probe_cache = file_cache['VmafProbeCache'][probe_key]
 
         if samples_count == 1:
             sample_points = [duration / 2]
@@ -177,43 +200,64 @@ class VideoOptimizerEngine:
             if self.stop_requested:
                 break
             
-            self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
+            str_cq = str(current_cq)
             scores = []
             
-            for sp in sample_points:
-                if self.stop_requested:
-                    break
+            if probe_cache is not None and str_cq in probe_cache['Probes']:
+                avg_score = probe_cache['Probes'][str_cq]
+                self.log(f"[PROBE] Pass {attempt}: Cached CQ {current_cq} -> VMAF: {avg_score:.2f}")
+                scores = [avg_score]
+            else:
+                self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
                 
-                uid = str(uuid.uuid4())[:8]
-                sample_src = temp_dir / f"v_s_{uid}.mkv"
-                sample_enc = temp_dir / f"v_e_{uid}.mkv"
-                
-                try:
-                    extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
-                    subprocess.run(extract_args, check=True)
+                for sp in sample_points:
+                    if self.stop_requested:
+                        break
                     
-                    if self.stop_requested: break
+                    uid = str(uuid.uuid4())[:8]
+                    sample_src = temp_dir / f"v_s_{uid}.mkv"
+                    sample_enc = temp_dir / f"v_e_{uid}.mkv"
                     
-                    encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(current_cq), str(sample_enc)]
-                    subprocess.run(encode_args, check=True)
-                    
-                    if self.stop_requested: break
-                    
-                    score = self.calculate_vmaf(sample_src, sample_enc)
-                    if score is not None:
-                        scores.append(score)
+                    try:
+                        extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
+                        subprocess.run(extract_args, check=True)
                         
-                except Exception as e:
-                    self.log(f"[FAIL] Sample processing failed: {e}")
-                finally:
-                    if sample_src.exists(): sample_src.unlink()
-                    if sample_enc.exists(): sample_enc.unlink()
+                        if self.stop_requested: break
+                        
+                        encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(current_cq), str(sample_enc)]
+                        subprocess.run(encode_args, check=True)
+                        
+                        if self.stop_requested: break
+                        
+                        score = self.calculate_vmaf(sample_src, sample_enc)
+                        if score is not None:
+                            scores.append(score)
+                            
+                    except Exception as e:
+                        self.log(f"[FAIL] Sample processing failed: {e}")
+                    finally:
+                        if sample_src.exists(): sample_src.unlink()
+                        if sample_enc.exists(): sample_enc.unlink()
+                
+                if scores and probe_cache is not None and not self.stop_requested:
+                    avg_score = sum(scores) / len(scores)
+                    probe_cache['Probes'][str_cq] = avg_score
+                    if avg_score > probe_cache['MaxAchievableVmaf']:
+                        probe_cache['MaxAchievableVmaf'] = avg_score
+                        probe_cache['MaxVmafCq'] = current_cq
+                    
+                    try:
+                        with open(config['CacheFile'], 'w') as f:
+                            json.dump(list(config['Cache'].values()), f, indent=4)
+                    except:
+                        pass
             
             if self.stop_requested: break
             
             if scores:
                 avg_score = sum(scores) / len(scores)
-                self.log(f"[PROBE] Average Visual Score: {avg_score:.2f}")
+                if probe_cache is None or str_cq not in probe_cache.get('Probes', {}):
+                    self.log(f"[PROBE] Average Visual Score: {avg_score:.2f}")
                 
                 if avg_score > max_score:
                     max_score = avg_score
@@ -329,6 +373,16 @@ class VideoOptimizerEngine:
             max_achievable_vmaf = 100.0
             max_vmaf_cq = None
             
+            # Load cached ceiling if available
+            probe_key = f"codec={config.get('Encoder', 'libx264')}|preset={config.get('Preset', 'medium')}|samples={config.get('VmafSamples', 3)}|dur={config.get('VmafDur', 5)}"
+            if config.get('CacheEnabled'):
+                file_cache = config.get('Cache', {}).get(key, {})
+                if file_cache.get('Signature') == signature:
+                    cached_probe = file_cache.get('VmafProbeCache', {}).get(probe_key, {})
+                    if cached_probe and cached_probe.get('MaxAchievableVmaf', 0.0) > 0:
+                        max_achievable_vmaf = cached_probe.get('MaxAchievableVmaf')
+                        max_vmaf_cq = cached_probe.get('MaxVmafCq')
+            
             for target in vmaf_ladder:
                 if self.stop_requested: break
                 
@@ -341,7 +395,7 @@ class VideoOptimizerEngine:
                     best_cq = max_vmaf_cq
                     res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                 else:
-                    best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target)
+                    best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
                     res['FinalVmaf'] = f"{best_score_val:.1f}"
                     
                     if max_score_val < target - 0.5:
@@ -382,25 +436,48 @@ class VideoOptimizerEngine:
                 else:
                     if temp_out.exists(): temp_out.unlink()
 
-        # 6. Cache Update
+        # 6. Failed Action Handling
+        if not res['Success']:
+            try:
+                on_fail = config.get('OnFail', 'Ignore (Keep Original)')
+                if "Unoptimizable" in on_fail:
+                    unopt_dir = file_path.parent / "Unoptimizable"
+                    unopt_dir.mkdir(exist_ok=True)
+                    dest = unopt_dir / file_path.name
+                    if file_path.exists():
+                        import shutil
+                        shutil.move(str(file_path), str(dest))
+                        self.log(f"[WARN] Moved failed file to 'Unoptimizable'.")
+                elif "Delete" in on_fail:
+                    if file_path.exists():
+                        file_path.unlink()
+                        self.log(f"[WARN] Deleted failed file.")
+            except Exception as e:
+                self.log(f"[FAIL] Failed to execute OnFail action: {e}")
+
+        # 7. Cache Update
         if config.get('CacheEnabled'):
-            if not res['Success'] and config.get('OnFail') == 'Ignore':
-                config['Cache'][key] = {
-                    'Path': str(file_path),
-                    'Signature': signature,
-                    'SettingsKey': config.get('SettingsKey'),
+            cache_entry = config['Cache'].get(key, {})
+            cache_entry.update({
+                'Path': str(file_path),
+                'Signature': signature,
+                'SettingsKey': config.get('SettingsKey')
+            })
+            if not res['Success'] and "Ignore" in config.get('OnFail', 'Ignore'):
+                cache_entry.update({
                     'Reason': res.get('Msg', 'Unknown'),
                     'LastTried': datetime.now().isoformat()
-                }
+                })
+                config['Cache'][key] = cache_entry
             elif res['Success']:
-                config['Cache'][key] = {
-                    'Path': str(file_path),
-                    'Signature': signature,
-                    'SettingsKey': config.get('SettingsKey'),
+                cache_entry.update({
                     'Status': 'Optimized',
                     'NewSize': res['NewSize'],
                     'FinalVmaf': res['FinalVmaf']
-                }
+                })
+                cache_entry.pop('Reason', None)
+                cache_entry.pop('LastTried', None)
+                config['Cache'][key] = cache_entry
             
             try:
                 with open(config['CacheFile'], 'w') as f:
@@ -1106,7 +1183,11 @@ class VideoOptimizerGUI(ctk.CTk):
                 # Update Treeview status
                 self.update_tree_item(i, status="In Progress")
                 
-                res = self.engine.optimize_file(f, config, i, total)
+                try:
+                    res = self.engine.optimize_file(f, config, i, total)
+                except Exception as file_error:
+                    self.add_log(f"[FAIL] Unexpected error processing {f['Name']}: {file_error}")
+                    res = {'Success': False, 'Msg': 'Failed (Error)'}
                 
                 if res['Success']:
                     self.processed_count += 1
