@@ -408,7 +408,7 @@ class VideoOptimizerEngine:
             
             if max_achievable_vmaf < min_ceiling:
                 self.log(f"[WARN] Cached absolute Quality ceiling hit. Max achievable VMAF ({max_achievable_vmaf:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
-                res['Msg'] = 'Below Min VMAF Ceiling'
+                res['Msg'] = 'Max VMAF < Min VMAF'
             else:
                 for target in vmaf_ladder:
                     if self.stop_requested: break
@@ -427,7 +427,7 @@ class VideoOptimizerEngine:
                         
                         if max_score_val < min_ceiling:
                             self.log(f"[WARN] Absolute Quality ceiling hit. Max achievable VMAF ({max_score_val:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
-                            res['Msg'] = 'Below Min VMAF Ceiling'
+                            res['Msg'] = 'Max VMAF < Min VMAF'
                             break
                         
                         if max_score_val < target - 0.5:
