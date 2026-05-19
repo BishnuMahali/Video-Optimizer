@@ -14,7 +14,7 @@ This release marks the transition to **Python as the primary interface**, while 
 
 ### 🌟 New Python GUI Features:
 - **Professional Desktop Interface:** Built with `CustomTkinter` for a sleek, system-aware Light/Dark mode experience.
-- **VMAF Target Ladder (Multi-Pass):** Automatically hunt for the perfect visual quality. Input targets like `95, 93, 91` and the engine will iterate until the optimal size-to-quality ratio is found.
+- **VMAF Target Ladder (Multi-Pass):** Automatically hunt for the perfect visual quality. Input targets like `95, 93, 91` and the engine will iterate until the optimal size-to-quality ratio is found. If a target is unreachable, the engine gracefully falls back to the maximum achievable quality.
 - **Persistent Config System:** All settings (Encoders, Presets, Quality, Paths) are now saved automatically to `.Video Optimizer/config.json`.
 - **Smart Encoder Intelligence:** Auto-detects all supported hardware encoders (NVIDIA NVENC, AMD AMF, Intel QSV) and marks unsupported ones.
 - **Beautified Real-Time Logs:** High-fidelity console output with professional status prefixes and detailed process feedback.

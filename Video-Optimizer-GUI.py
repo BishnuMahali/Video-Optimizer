@@ -180,6 +180,21 @@ class VideoOptimizerEngine:
                     'MaxVmafCq': 26
                 }
             probe_cache = file_cache['VmafProbeCache'][probe_key]
+            
+            if probe_cache.get('Probes'):
+                closest_cq = None
+                closest_diff = 100
+                closest_score = 0
+                for c_cq, c_score in probe_cache['Probes'].items():
+                    diff = abs(c_score - target_vmaf)
+                    if diff < closest_diff:
+                        closest_diff = diff
+                        closest_cq = int(c_cq)
+                        closest_score = c_score
+                
+                if closest_diff <= 0.5:
+                    self.log(f"[PROBE] Found ideal cached match: CQ {closest_cq} -> VMAF {closest_score:.2f} (Target: {target_vmaf})")
+                    return closest_cq, closest_score, probe_cache.get('MaxAchievableVmaf', 0), probe_cache.get('MaxVmafCq', 26)
 
         if samples_count == 1:
             sample_points = [duration / 2]
@@ -202,11 +217,13 @@ class VideoOptimizerEngine:
             
             str_cq = str(current_cq)
             scores = []
+            is_cached = False
             
             if probe_cache is not None and str_cq in probe_cache['Probes']:
                 avg_score = probe_cache['Probes'][str_cq]
                 self.log(f"[PROBE] Pass {attempt}: Cached CQ {current_cq} -> VMAF: {avg_score:.2f}")
                 scores = [avg_score]
+                is_cached = True
             else:
                 self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
                 
@@ -256,8 +273,8 @@ class VideoOptimizerEngine:
             
             if scores:
                 avg_score = sum(scores) / len(scores)
-                if probe_cache is None or str_cq not in probe_cache.get('Probes', {}):
-                    self.log(f"[PROBE] Average Visual Score: {avg_score:.2f}")
+                if not is_cached:
+                    self.log(f"[PROBE] Pass {attempt}: CQ {current_cq} -> VMAF: {avg_score:.2f}")
                 
                 if avg_score > max_score:
                     max_score = avg_score
@@ -319,8 +336,13 @@ class VideoOptimizerEngine:
         if config.get('ResumeEnabled') and config.get('Cache'):
             cached = config['Cache'].get(key)
             if cached and cached.get('Signature') == signature and cached.get('SettingsKey') == config.get('SettingsKey'):
-                self.log("[SKIP] Found in cache with matching settings.")
-                return {'Success': True, 'Msg': 'Cached Skip', 'NewSize': cached.get('NewSize', 0), 'FinalVmaf': cached.get('FinalVmaf', '---')}
+                if cached.get('Status') == 'Optimized':
+                    self.log("[SKIP] Found in cache with matching settings (Optimized).")
+                    return {'Success': True, 'Msg': 'Cached Skip', 'NewSize': cached.get('NewSize', file_info['OldSizeBytes']), 'FinalVmaf': cached.get('FinalVmaf', '---')}
+                else:
+                    reason = cached.get('Reason', 'Failed Previously')
+                    self.log(f"[SKIP] Found in cache with matching settings ({reason}).")
+                    return {'Success': False, 'Msg': f"Cached Fail: {reason}", 'FinalVmaf': '---'}
 
         # 2. Codec-Aware Skip
         source_codec = self.get_video_codec(file_path)
@@ -328,7 +350,7 @@ class VideoOptimizerEngine:
         if config.get('SkipEfficient', True):
             if any(c in source_codec for c in self.efficient_codecs):
                 self.log(f"[SKIP] Source is already efficient ({source_codec}).")
-                return {'Success': True, 'Msg': 'Already Optimized', 'NewSize': file_info['OldSizeBytes'], 'FinalVmaf': '---'}
+                return {'Success': True, 'Msg': 'Already Efficient', 'NewSize': file_info['OldSizeBytes'], 'FinalVmaf': '---'}
 
         res = {'Success': False, 'NewSize': 0, 'Msg': 'Failed', 'FinalVmaf': '---'}
         
@@ -372,6 +394,7 @@ class VideoOptimizerEngine:
             vmaf_ladder = config.get('VmafLadder', [config.get('VmafTarget', 93)])
             max_achievable_vmaf = 100.0
             max_vmaf_cq = None
+            min_ceiling = config.get('VmafMinCeiling', 85.0)
             
             # Load cached ceiling if available
             probe_key = f"codec={config.get('Encoder', 'libx264')}|preset={config.get('Preset', 'medium')}|samples={config.get('VmafSamples', 3)}|dur={config.get('VmafDur', 5)}"
@@ -383,41 +406,55 @@ class VideoOptimizerEngine:
                         max_achievable_vmaf = cached_probe.get('MaxAchievableVmaf')
                         max_vmaf_cq = cached_probe.get('MaxVmafCq')
             
-            for target in vmaf_ladder:
-                if self.stop_requested: break
-                
-                if target > max_achievable_vmaf + 0.5:
-                    self.log(f"[SKIP] Skipping VMAF Target {target} (Ceiling is {max_achievable_vmaf:.1f})")
-                    continue
-                
-                if max_vmaf_cq is not None and abs(target - max_achievable_vmaf) <= 0.5:
-                    self.log(f"[PROBE] Target {target} is close to known ceiling {max_achievable_vmaf:.1f}. Using CQ {max_vmaf_cq}.")
-                    best_cq = max_vmaf_cq
-                    res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
-                else:
-                    best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
-                    res['FinalVmaf'] = f"{best_score_val:.1f}"
+            if max_achievable_vmaf < min_ceiling:
+                self.log(f"[WARN] Cached absolute Quality ceiling hit. Max achievable VMAF ({max_achievable_vmaf:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
+                res['Msg'] = 'Below Min VMAF Ceiling'
+            else:
+                for target in vmaf_ladder:
+                    if self.stop_requested: break
                     
-                    if max_score_val < target - 0.5:
-                        self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping encode.")
-                        max_achievable_vmaf = max_score_val
-                        max_vmaf_cq = max_score_cq
+                    if target > max_achievable_vmaf + 0.5:
+                        self.log(f"[SKIP] Skipping VMAF Target {target} (Ceiling is {max_achievable_vmaf:.1f})")
                         continue
-                
-                self.log(f"[ENCODE] Running final encode (VMAF Target: {target}, CQ: {best_cq})...")
-                success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files)
-                
-                if success and temp_out.exists():
-                    val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
-                    if val_res['Success']:
-                        res.update(val_res)
-                        break
+                    
+                    if max_vmaf_cq is not None and abs(target - max_achievable_vmaf) <= 0.5:
+                        self.log(f"[PROBE] Target {target} is close to known ceiling {max_achievable_vmaf:.1f}. Using CQ {max_vmaf_cq}.")
+                        best_cq = max_vmaf_cq
+                        res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
+                    else:
+                        best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
+                        res['FinalVmaf'] = f"{best_score_val:.1f}"
+                        
+                        if max_score_val < min_ceiling:
+                            self.log(f"[WARN] Absolute Quality ceiling hit. Max achievable VMAF ({max_score_val:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
+                            res['Msg'] = 'Below Min VMAF Ceiling'
+                            break
+                        
+                        if max_score_val < target - 0.5:
+                            max_achievable_vmaf = max_score_val
+                            max_vmaf_cq = max_score_cq
+                            if config.get('VmafFallbackEnabled', False):
+                                self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Fallback Enabled: using CQ {max_score_cq}.")
+                                best_cq = max_score_cq
+                                res['FinalVmaf'] = f"{max_score_val:.1f}"
+                            else:
+                                self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping target encode.")
+                                continue
+                    
+                    self.log(f"[ENCODE] Running final encode (VMAF Target: {target}, CQ: {best_cq})...")
+                    success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files)
+                    
+                    if success and temp_out.exists():
+                        val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
+                        if val_res['Success']:
+                            res.update(val_res)
+                            break
+                        else:
+                            if temp_out.exists(): temp_out.unlink()
+                            self.log(f"[FAIL] VMAF Target {target} yielded larger file or failed validation.")
                     else:
                         if temp_out.exists(): temp_out.unlink()
-                        self.log(f"[FAIL] VMAF Target {target} yielded larger file or failed validation.")
-                else:
-                    if temp_out.exists(): temp_out.unlink()
-                    self.log(f"[FAIL] Encoding failed for VMAF Target {target}.")
+                        self.log(f"[FAIL] Encoding failed for VMAF Target {target}.")
         else:
             active_qualities = config.get('QualityLadder', [23, 26, 29])
             for q in active_qualities:
@@ -456,7 +493,7 @@ class VideoOptimizerEngine:
                 self.log(f"[FAIL] Failed to execute OnFail action: {e}")
 
         # 7. Cache Update
-        if config.get('CacheEnabled'):
+        if config.get('CacheEnabled') and not self.stop_requested:
             cache_entry = config['Cache'].get(key, {})
             cache_entry.update({
                 'Path': str(file_path),
@@ -674,6 +711,24 @@ class VideoOptimizerGUI(ctk.CTk):
         self.vmaf_card.pack(fill="x", padx=20, pady=10)
         self.setup_card_label(self.vmaf_card, "2. ADVANCED VMAF TUNING")
         
+        self.vmaf_chk_frame = ctk.CTkFrame(self.vmaf_card, fg_color="transparent")
+        self.vmaf_chk_frame.pack(fill="x", padx=10, pady=0)
+        self.chk_vmaf_fallback = ctk.CTkCheckBox(self.vmaf_chk_frame, text="Encode with Max VMAF as Fallback")
+        self.chk_vmaf_fallback.pack(anchor="w", pady=5)
+        self.chk_vmaf_fallback.select()
+        self.chk_vmaf_ladder = ctk.CTkCheckBox(self.vmaf_chk_frame, text="Enable Stepping Target", command=self.toggle_vmaf_ladder)
+        self.chk_vmaf_ladder.pack(anchor="w", pady=5)
+
+        self.vmaf_ceil_frame = ctk.CTkFrame(self.vmaf_card, fg_color="transparent")
+        self.vmaf_ceil_frame.pack(fill="x", padx=10, pady=(5, 2))
+        ctk.CTkLabel(self.vmaf_ceil_frame, text="Minimum VMAF Ceiling", font=ctk.CTkFont(size=10)).pack(side="left")
+        self.lbl_vmaf_ceiling_val = ctk.CTkLabel(self.vmaf_ceil_frame, text="85", font=ctk.CTkFont(weight="bold"))
+        self.lbl_vmaf_ceiling_val.pack(side="right")
+        
+        self.slider_vmaf_ceiling = ctk.CTkSlider(self.vmaf_card, from_=0, to=100, number_of_steps=100, command=self.update_vmaf_ceiling_label)
+        self.slider_vmaf_ceiling.pack(fill="x", padx=10, pady=(0, 5))
+        self.slider_vmaf_ceiling.set(85)
+
         self.vmaf_target_frame = ctk.CTkFrame(self.vmaf_card, fg_color="transparent")
         self.vmaf_target_frame.pack(fill="x", padx=10, pady=2)
         ctk.CTkLabel(self.vmaf_target_frame, text="Target Quality (VMAF)", font=ctk.CTkFont(size=10)).pack(side="left")
@@ -684,9 +739,8 @@ class VideoOptimizerGUI(ctk.CTk):
         self.slider_vmaf.pack(fill="x", padx=10, pady=5)
         self.slider_vmaf.set(93)
 
-        ctk.CTkLabel(self.vmaf_card, text="VMAF Target Ladder (Comma Separated)", font=ctk.CTkFont(size=10)).pack(padx=10, anchor="w")
-        self.entry_vmaf_ladder = ctk.CTkEntry(self.vmaf_card, placeholder_text="93,")
-        self.entry_vmaf_ladder.pack(fill="x", padx=10, pady=(0, 5))
+        self.lbl_vmaf_ladder_text = ctk.CTkLabel(self.vmaf_card, text="VMAF Target Ladder (Space/Comma Separated)", font=ctk.CTkFont(size=10))
+        self.entry_vmaf_ladder = ctk.CTkEntry(self.vmaf_card, placeholder_text="95 93 91")
         self.entry_vmaf_ladder.insert(0, "93")
 
         self.vmaf_opt_frame = ctk.CTkFrame(self.vmaf_card, fg_color="transparent")
@@ -871,12 +925,29 @@ class VideoOptimizerGUI(ctk.CTk):
         val_lbl.pack(pady=(0, 5))
         return val_lbl
 
+    def update_vmaf_ceiling_label(self, val):
+        self.lbl_vmaf_ceiling_val.configure(text=str(int(val)))
+
     def update_vmaf_label(self, val):
         self.lbl_vmaf_val.configure(text=str(int(val)))
         # Sync ladder entry if only one value
         if "," not in self.entry_vmaf_ladder.get():
             self.entry_vmaf_ladder.delete(0, "end")
             self.entry_vmaf_ladder.insert(0, str(int(val)))
+
+    def toggle_vmaf_ladder(self):
+        if self.chk_vmaf_ladder.get():
+            self.lbl_vmaf_val.pack_forget()
+            self.slider_vmaf.pack_forget()
+            self.vmaf_target_frame.pack_forget()
+            self.lbl_vmaf_ladder_text.pack(padx=10, anchor="w", before=self.vmaf_opt_frame)
+            self.entry_vmaf_ladder.pack(fill="x", padx=10, pady=(0, 5), before=self.vmaf_opt_frame)
+        else:
+            self.lbl_vmaf_ladder_text.pack_forget()
+            self.entry_vmaf_ladder.pack_forget()
+            self.vmaf_target_frame.pack(fill="x", padx=10, pady=2, before=self.vmaf_opt_frame)
+            self.lbl_vmaf_val.pack(side="right")
+            self.slider_vmaf.pack(fill="x", padx=10, pady=5, before=self.vmaf_opt_frame)
 
     def toggle_vmaf_card(self):
         if self.chk_vmaf.get():
@@ -935,6 +1006,16 @@ class VideoOptimizerGUI(ctk.CTk):
                     if config['VmafEnabled']: self.chk_vmaf.select()
                     else: self.chk_vmaf.deselect()
                     self.toggle_vmaf_card()
+                if 'VmafFallbackEnabled' in config:
+                    if config['VmafFallbackEnabled']: self.chk_vmaf_fallback.select()
+                    else: self.chk_vmaf_fallback.deselect()
+                if 'VmafLadderEnabled' in config:
+                    if config['VmafLadderEnabled']: self.chk_vmaf_ladder.select()
+                    else: self.chk_vmaf_ladder.deselect()
+                    self.toggle_vmaf_ladder()
+                if 'VmafMinCeiling' in config:
+                    self.slider_vmaf_ceiling.set(config['VmafMinCeiling'])
+                    self.update_vmaf_ceiling_label(config['VmafMinCeiling'])
                 if 'VmafTarget' in config:
                     self.slider_vmaf.set(config['VmafTarget'])
                     self.update_vmaf_label(config['VmafTarget'])
@@ -980,9 +1061,12 @@ class VideoOptimizerGUI(ctk.CTk):
                 'Container': self.combo_container.get(),
                 'Recursive': bool(self.chk_recursive.get()),
                 'VmafEnabled': bool(self.chk_vmaf.get()),
+                'VmafFallbackEnabled': bool(self.chk_vmaf_fallback.get()),
+                'VmafLadderEnabled': bool(self.chk_vmaf_ladder.get()),
+                'VmafMinCeiling': float(self.slider_vmaf_ceiling.get()),
                 'VmafTarget': int(self.slider_vmaf.get()),
-                'VmafLadder': [int(x.strip()) for x in self.entry_vmaf_ladder.get().split(',') if x.strip().isdigit()],
-                'QualityLadder': [int(x.strip()) for x in self.entry_ladder.get().split(',') if x.strip().isdigit()],
+                'VmafLadder': [int(x.strip()) for x in self.entry_vmaf_ladder.get().replace(',', ' ').split() if x.strip().isdigit()],
+                'QualityLadder': [int(x.strip()) for x in self.entry_ladder.get().replace(',', ' ').split() if x.strip().isdigit()],
                 'Preset': self.combo_preset.get(),
                 'Audio': self.combo_audio.get(),
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
@@ -1120,7 +1204,7 @@ class VideoOptimizerGUI(ctk.CTk):
         
         # Build Robust SettingsKey
         if self.chk_vmaf.get():
-            q_part = f"vmaf={self.entry_vmaf_ladder.get()}|samples={vmaf_samples}|dur={vmaf_dur}"
+            q_part = f"vmaf={self.entry_vmaf_ladder.get()}|samples={vmaf_samples}|dur={vmaf_dur}|fallback={bool(self.chk_vmaf_fallback.get())}|ceiling={float(self.slider_vmaf_ceiling.get())}"
         else:
             q_part = f"quality={self.entry_ladder.get()}"
         settings_key = f"codec={sel_enc['Codec']}|mode={sel_enc['Mode']}|preset={self.combo_preset.get()}|{q_part}|audio={audio}|container={container}"
@@ -1229,7 +1313,7 @@ class VideoOptimizerGUI(ctk.CTk):
             else:
                 tag = "success"
         elif status == "In Progress": tag = "progress"
-        elif status in ["Already Optimized", "Cached Skip"]: tag = "skip"
+        elif status in ["Already Efficient", "Cached Skip"]: tag = "skip"
         elif "Fail" in status or status in ["Duration Mismatch", "Larger than Source"]: tag = "fail"
         
         if tag:
@@ -1262,7 +1346,7 @@ class VideoOptimizerGUI(ctk.CTk):
             item_status = self.tree.item(item_id, "values")[4]
             if item_status == "Done":
                 processed += 1
-            elif item_status in ["Cached Skip", "Already Optimized"]:
+            elif item_status in ["Cached Skip", "Already Efficient"]:
                 skipped += 1
             elif item_status in ["Queued", "In Progress"]:
                 unprocessed += 1
@@ -1282,6 +1366,16 @@ class VideoOptimizerGUI(ctk.CTk):
         self.add_log("-" * 50)
         self.add_log(f" Total Space Saved : {saved_str}")
         self.add_log("="*50 + "\n")
+        
+        if self.chk_log.get():
+            try:
+                work_dir = os.path.join(self.entry_path.get(), ".Video Optimizer")
+                if os.path.exists(work_dir):
+                    log_file = os.path.join(work_dir, "Optimization_Log.txt")
+                    with open(log_file, "a", encoding="utf-8") as f:
+                        f.write(self.log_text.get("1.0", "end"))
+            except Exception as e:
+                print(f"Failed to save log: {e}")
 
     def stop_optimization(self):
         self.engine.request_stop()

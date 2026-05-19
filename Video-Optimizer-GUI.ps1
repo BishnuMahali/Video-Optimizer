@@ -258,7 +258,7 @@ $btnStart.Add_Click({
                         if ($stopSignal[0]) { break }
                         if($scores.Count -gt 0){
                             $avgScore=($scores | Measure-Object -Average).Average
-                            Write-Output @{ Type="Log"; Msg="[PROBE] Average Score: $([math]::Round($avgScore,2))" }
+                            Write-Output @{ Type="Log"; Msg="[PROBE] Attempt $attempt : CQ $currentCQ -> VMAF: $([math]::Round($avgScore,2))" }
                             Write-Output @{ Type="VmafUpdate"; Score=$avgScore }
                             if ([math]::Abs($avgScore-$config.VmafTarget)-lt [math]::Abs($bestScore-$config.VmafTarget)) { $bestCQ=$currentCQ; $bestScore=$avgScore }
                             if ([math]::Abs($avgScore-$config.VmafTarget)-le 0.5) { break }
@@ -299,9 +299,23 @@ $btnStart.Add_Click({
                     }
                 }
             } else { $res.Msg = "Path Error" }
-            
-            if ($config.CacheEnabled) { if (-not $res.Success -and $config.OnFail -eq "Ignore") { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Reason=$res.Msg; LastTried=(Get-Date).ToString("o") } } elseif ($res.Success) { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Status="Optimized" } }; $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile }
-            
+
+            if (-not $stopSignal[0] -and -not $res.Success) {
+                try {
+                    if ($config.OnFail -eq "Move") {
+                        $unoptDir = Join-Path $dir "Unoptimizable"
+                        if (-not (Test-Path $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
+                        $dest = Join-Path $unoptDir $f.Name
+                        if (Test-Path $f.FullName) { Move-Item $f.FullName $dest -Force }
+                        Write-Output @{ Type="Log"; Msg="[WARN] Moved failed file to 'Unoptimizable'." }
+                    } elseif ($config.OnFail -eq "Delete") {
+                        if (Test-Path $f.FullName) { Remove-Item $f.FullName -Force }
+                        Write-Output @{ Type="Log"; Msg="[WARN] Deleted failed file." }
+                    }
+                } catch { Write-Output @{ Type="Log"; Msg="[FAIL] Failed to execute OnFail action: $_" } }
+            }
+
+            if ($config.CacheEnabled -and -not $stopSignal[0]) { if (-not $res.Success -and $config.OnFail -eq "Ignore") { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Reason=$res.Msg; LastTried=(Get-Date).ToString("o") } } elseif ($res.Success) { $config.Cache[$key]=@{Path=$f.FullName; Signature=$sig; SettingsKey=$config.SettingsKey; Status="Optimized" } }; $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile }            
             if ($stopSignal[0]) { 
                 Write-Output @{ Index=$idx; Success=$false; Msg="Stopped"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }
                 break 

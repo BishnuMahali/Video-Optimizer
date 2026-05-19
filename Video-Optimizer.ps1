@@ -100,6 +100,8 @@ $enableCache = $true
 # --- VMAF Variables ---
 $hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
 $vmafEnabled = $true
+$vmafFallback = $false
+$vmafMinCeiling = 85.0
 $vmafTarget = "93"
 $vmafMinCQ = 0
 $vmafMaxCQ = 51
@@ -120,6 +122,8 @@ function Save-Config {
         TargetFolder      = $global:targetFolder
         Recursive         = $global:recursive
         VmafEnabled       = $global:vmafEnabled
+        VmafFallback      = $global:vmafFallback
+        VmafMinCeiling    = $global:vmafMinCeiling
         VmafTarget        = $global:vmafTarget
         VmafMinCQ         = $global:vmafMinCQ
         VmafMaxCQ         = $global:vmafMaxCQ
@@ -228,12 +232,14 @@ function Get-OptimizationSettingsKey {
         [string]$AudioAction,
         [string]$Container,
         [bool]$VmafEnabled = $false,
-        [double]$VmafTarget = 0
+        [double]$VmafTarget = 0,
+        [bool]$VmafFallback = $false,
+        [double]$VmafMinCeiling = 85.0
     )
 
     $normalizedQuality = (($Quality -split ',') | ForEach-Object { $_.Trim() }) -join ','
     $key = "codec=$VideoCodec|mode=$Mode|quality=$normalizedQuality|preset=$Preset|audio=$AudioAction|container=$Container"
-    if ($VmafEnabled) { $key += "|vmaf=true|target=$VmafTarget" }
+    if ($VmafEnabled) { $key += "|vmaf=true|target=$VmafTarget|fallback=$VmafFallback|ceiling=$VmafMinCeiling" }
     return $key
 }
 
@@ -279,9 +285,10 @@ function Write-SummaryBox {
         [array]$NewIgnored
     )
     
-    Write-Host "`n  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—" -ForegroundColor Cyan
-    Write-Host "  â•‘             OPTIMIZATION COMPLETE                â•‘" -ForegroundColor Cyan
-    Write-Host "  â• â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•£" -ForegroundColor Cyan
+    $line = $S.BoxH * 50
+    Write-Host "`n  $($S.BoxTL)$line$($S.BoxTR)" -ForegroundColor Cyan
+    Write-Host "  $($S.BoxV)             OPTIMIZATION COMPLETE                $($S.BoxV)" -ForegroundColor Cyan
+    Write-Host "  $($S.BoxTL)$line$($S.BoxTR)" -ForegroundColor Cyan
     
     $rows = @(
         @{ Label = " Files Processed"; Value = $Processed; Color = "White" }
@@ -290,45 +297,47 @@ function Write-SummaryBox {
     )
     
     foreach ($row in $rows) {
-        Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV) " -NoNewline -ForegroundColor Cyan
         Write-Host ($row.Label.PadRight(22) + ": " + $row.Value).PadRight(48) -ForegroundColor $row.Color -NoNewline
-        Write-Host " â•‘" -ForegroundColor Cyan
+        Write-Host " $($S.BoxV)" -ForegroundColor Cyan
     }
     
-    Write-Host "  â•Ÿâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â•¢" -ForegroundColor Cyan
-    Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  $($S.BoxV)--------------------------------------------------$($S.BoxV)" -ForegroundColor Cyan
+    Write-Host "  $($S.BoxV) " -NoNewline -ForegroundColor Cyan
     Write-Host (" Total Space Saved".PadRight(22) + ": $Saved").PadRight(48) -ForegroundColor Green -NoNewline
-    Write-Host " â•‘" -ForegroundColor Cyan
-    Write-Host "  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor Cyan
+    Write-Host " $($S.BoxV)" -ForegroundColor Cyan
+    Write-Host "  $($S.BoxBL)$line$($S.BoxBR)" -ForegroundColor Cyan
 
     if ($NewVideos.Count -gt 0 -or $NewIgnored.Count -gt 0) {
-        Write-Host "`n  â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—" -ForegroundColor Cyan
-        Write-Host "  â•‘                  SUGGESTIONS                     â•‘" -ForegroundColor Cyan
-        Write-Host "  â• â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•£" -ForegroundColor Cyan
-        Write-Host "  â•‘ Newly discovered formats found in this session:  â•‘" -ForegroundColor Cyan
-        Write-Host "  â•‘                                                  â•‘" -ForegroundColor Cyan
+        Write-Host "`n  $($S.BoxTL)$line$($S.BoxTR)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV)                  SUGGESTIONS                     $($S.BoxV)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxTL)$line$($S.BoxTR)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV) Newly discovered formats found in this session:  $($S.BoxV)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV)                                                  $($S.BoxV)" -ForegroundColor Cyan
         
         if ($NewVideos.Count -gt 0) {
             $exts = ($NewVideos -join ', ')
             if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
-            Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
+            Write-Host "  $($S.BoxV) " -NoNewline -ForegroundColor Cyan
             Write-Host ("  - Add to Inclusion: $exts").PadRight(48) -ForegroundColor Green -NoNewline
-            Write-Host " â•‘" -ForegroundColor Cyan
+            Write-Host " $($S.BoxV)" -ForegroundColor Cyan
         }
         if ($NewIgnored.Count -gt 0) {
             $exts = ($NewIgnored -join ', ')
             if ($exts.Length -gt 25) { $exts = $exts.Substring(0, 22) + "..." }
-            Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
+            Write-Host "  $($S.BoxV) " -NoNewline -ForegroundColor Cyan
             Write-Host ("  - Add to Exclusion: $exts").PadRight(48) -ForegroundColor Gray -NoNewline
-            Write-Host " â•‘" -ForegroundColor Cyan
+            Write-Host " $($S.BoxV)" -ForegroundColor Cyan
         }
         
-        Write-Host "  â•‘                                                  â•‘" -ForegroundColor Cyan
-        Write-Host "  â•‘ " -NoNewline -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV)                                                  $($S.BoxV)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxV) " -NoNewline -ForegroundColor Cyan
         Write-Host " (Edit: `$knownVideoExtensions / `$knownIgnoredExt)".PadRight(48) -ForegroundColor DarkGray -NoNewline
-        Write-Host " â•‘" -ForegroundColor Cyan
-        Write-Host "  â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor Cyan
+        Write-Host " $($S.BoxV)" -ForegroundColor Cyan
+        Write-Host "  $($S.BoxBL)$line$($S.BoxBR)" -ForegroundColor Cyan
+    }
 }
+
 
 # --- VMAF Advanced Logic ---
 $hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
@@ -599,7 +608,10 @@ while ($runningMenu) {
     $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "" }
 
     if ($vmafEnabled) {
-        $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Reccommended: 90-95 (93=lossless). Higher = Better Quality, Larger File." }
+        $fallbackDisplay = if ($vmafFallback) { "Yes" } else { "No" }
+        $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
+        $items += @{ Label = "Encode with Max VMAF as Fallback"; Value = $fallbackDisplay; Hint = "Encode at optimal CQ even if Target VMAF is unreachable." }
+        $items += @{ Label = "Min Ceiling"; Value = $vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
         $items += @{ Label = "CQ Range"; Value = "$vmafMinCQ to $vmafMaxCQ"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
         $items += @{ Label = "Search Step"; Value = "$vmafStep points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
         $items += @{ Label = "VMAF Samples"; Value = $vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
@@ -821,14 +833,24 @@ while ($runningMenu) {
                     "Recursive" { $global:recursive = -not $global:recursive }
                     "Target VMAF" {
                         Write-Host "`n"
-                        $newVmaf = Read-Host "Enter Target VMAF Score (e.g. 95 or 95,93,91)"
-                        if ($newVmaf -match '^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)*$') { $global:vmafTarget = $newVmaf -replace '\s+', '' }
+                        $newVmaf = Read-Host "Enter Target VMAF Score (e.g. 95 or 95 93 91)"
+                        if ($newVmaf -match '^[\d\.\s,]+$') { 
+                            $global:vmafTarget = ($newVmaf -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
+                        }
                         else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                    }
+                    "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
+                    "Min Ceiling" {
+                        Write-Host "`n"
+                        $newCeil = Read-Host "Enter Min VMAF Ceiling (e.g. 85)"
+                        if ($newCeil -as [double] -and $newCeil -ge 0 -and $newCeil -le 100) { $global:vmafMinCeiling = [double]$newCeil }
                     }
                     "Quality" {
                         Write-Host "`n"
-                        $newQuality = Read-Host "Enter quality value (e.g. 23,26,29)"
-                        if ($newQuality -match '^\d+(\s*,\s*\d+){0,2}$') { $global:quality = $newQuality -replace '\s+', '' }
+                        $newQuality = Read-Host "Enter quality value (e.g. 23 26 29)"
+                        if ($newQuality -match '^[\d\.\s,]+$') {
+                            $global:quality = ($newQuality -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
+                        }
                         else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
                     }
                     "CQ Range" {
@@ -906,7 +928,7 @@ if ($vmafEnabled) {
     Add-Content -Path $logFile -Value "Encoder: $videoCodec, Quality: $quality, Preset: $preset"
 }
 
-$currentSettingsKey = Get-OptimizationSettingsKey -VideoCodec $videoCodec -Mode $mode -Quality $quality -Preset $preset -AudioAction $audioAction -Container $container -VmafEnabled $vmafEnabled -VmafTarget $vmafTarget
+$currentSettingsKey = Get-OptimizationSettingsKey -VideoCodec $videoCodec -Mode $mode -Quality $quality -Preset $preset -AudioAction $audioAction -Container $container -VmafEnabled $vmafEnabled -VmafTarget $vmafTarget -VmafFallback $vmafFallback -VmafMinCeiling $vmafMinCeiling
 $unoptimizableCache = @{}
 if (Test-Path -LiteralPath $cacheFile) {
     try {
@@ -1016,7 +1038,7 @@ if ($totalFiles -eq 0) {
 
             # --- Finalize Paths ---
             $finalExt = if ($container -eq "Original") { $file.Extension } else { ".$($container.ToLower())" }
-            $tempOutput = Join-Path $dir ($name + "_temp" + $finalExt)
+            $tempOutput = Join-Path $dir ($name + "_TEMP" + $finalExt)
             
             if ($onSuccessAction -eq "Replace Original") {
                 $finalOutput = Join-Path $dir ($name + $finalExt)
@@ -1088,37 +1110,48 @@ if ($totalFiles -eq 0) {
                 }
             }
 
-            foreach ($currentTarget in $vmafTargetsToTry) {
-                if ($global:vmafEnabled) {
-                    if ($currentTarget -gt $maxAchievableVmaf + 0.5) {
-                        Write-Host "  $($S.Bullet) Skipping VMAF Target $currentTarget (Ceiling is $([math]::Round($maxAchievableVmaf,1)))." -ForegroundColor Gray
-                        continue
-                    }
+            if ($global:vmafEnabled -and $maxAchievableVmaf -lt $global:vmafMinCeiling) {
+                Write-Host "  $($S.Bullet) Cached absolute Quality ceiling hit. Max achievable VMAF ($([math]::Round($maxAchievableVmaf,1))) is below minimum floor ($global:vmafMinCeiling). Skipping file entirely." -ForegroundColor Yellow
+                $unoptimizable = $true; $unoptReason = "Below Min VMAF Ceiling"
+            }
 
-                    if ($null -ne $maxVmafCq -and [math]::Abs($currentTarget - $maxAchievableVmaf) -le 0.5) {
-                        Write-Host "  $($S.Bullet) Target $currentTarget is close to known ceiling $([math]::Round($maxAchievableVmaf,1)). Using CQ $maxVmafCq." -ForegroundColor Cyan
-                        $optimalCq = $maxVmafCq
-                        $activeQualityList = @($optimalCq)
-                    } else {
-                        Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                        $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature
-                        $optimalCq = $optimalResult.CQ
-                        $lastBestScoreVal = $optimalResult.Score
-                        
-                        if ($optimalResult.MaxScore -lt $currentTarget - 0.5) {
-                            Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Skipping encode." -ForegroundColor Yellow
-                            $maxAchievableVmaf = $optimalResult.MaxScore
-                            $maxVmafCq = $optimalResult.MaxScoreCQ
+            if (-not $unoptimizable) {
+                foreach ($currentTarget in $vmafTargetsToTry) {
+                    if ($global:vmafEnabled) {
+                        if ($null -ne $maxVmafCq -and $currentTarget -gt $maxAchievableVmaf - 0.5) {
+                            Write-Host "  $($S.Bullet) Target $currentTarget exceeds known ceiling $([math]::Round($maxAchievableVmaf,1)). Skipping target." -ForegroundColor DarkGray
                             continue
-                        }
-                        
-                        $activeQualityList = @($optimalCq)
-                    }
-                } else {
-                    $activeQualityList = $qualityList
-                }
+                        } else {
+                            Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
+                            $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature
+                            $optimalCq = $optimalResult.CQ
+                            $lastBestScoreVal = $optimalResult.Score
 
-                for ($i = 0; $i -lt $activeQualityList.Length; $i++) {
+                            if ($optimalResult.MaxScore -lt $global:vmafMinCeiling) {
+                                Write-Host "  $($S.Bullet) Absolute Quality ceiling hit. Max achievable VMAF ($([math]::Round($optimalResult.MaxScore,1))) is below minimum floor ($global:vmafMinCeiling). Skipping file entirely." -ForegroundColor Yellow
+                                $unoptimizable = $true; $unoptReason = "Below Min VMAF Ceiling"
+                                break
+                            }
+
+                            if ($optimalResult.MaxScore -lt $currentTarget - 0.5) {
+                                $maxAchievableVmaf = $optimalResult.MaxScore
+                                $maxVmafCq = $optimalResult.MaxScoreCQ
+                                if ($global:vmafFallback) {
+                                    Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Fallback Enabled: Encoding at CQ: $($optimalResult.MaxScoreCQ)." -ForegroundColor Yellow
+                                    $optimalCq = $optimalResult.MaxScoreCQ
+                                } else {
+                                    Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Skipping target encode." -ForegroundColor Yellow
+                                    continue
+                                }
+                            }
+
+                            $activeQualityList = @($optimalCq)
+                        }                
+                    } else {
+                        $activeQualityList = $qualityList
+                    }
+
+                    for ($i = 0; $i -lt $activeQualityList.Length; $i++) {
                     $q = $activeQualityList[$i]
                     $passInfo = if ($activeQualityList.Length -gt 1) { "(Pass $($i + 1)/$($activeQualityList.Length))" } else { "" }
                     Write-Host "  $($S.Bullet) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
@@ -1212,8 +1245,10 @@ if ($totalFiles -eq 0) {
                         $unoptimizable = $true; $unoptReason = "Verification failed"; break
                     }
                 }
-                if ($success -or $unoptimizable) { break }
+                if ($success -or $unoptimizable -or $aborted) { break }
             }
+
+            if ($aborted) { break }
 
             if ($success) {
                 try {
