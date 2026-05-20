@@ -129,7 +129,8 @@ class VideoOptimizerEngine:
             return "unknown"
 
     def calculate_vmaf(self, reference, distorted):
-        args = ['ffmpeg', '-i', str(distorted), '-i', str(reference), '-filter_complex', 'libvmaf', '-f', 'null', '-']
+        threads = max(1, min(4, os.cpu_count() // 2))
+        args = ['ffmpeg', '-i', str(distorted), '-i', str(reference), '-filter_complex', f'libvmaf=n_threads={threads}', '-f', 'null', '-']
         try:
             result = subprocess.run(args, capture_output=True, text=True)
             import re
@@ -201,111 +202,126 @@ class VideoOptimizerEngine:
         else:
             sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
 
-        best_cq = 26
-        best_score = 0
-        max_score = 0
-        max_score_cq = 26
-        current_step = 4
-        last_dir = 0
-        current_cq = 26
-        
         temp_dir = Path(os.environ.get('TEMP', '.'))
+        ref_samples = []
+        uid = str(uuid.uuid4())[:8]
 
-        for attempt in range(1, 16):
+        try:
+            self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
+            for idx, sp in enumerate(sample_points):
+                if self.stop_requested:
+                    break
+                sample_src = temp_dir / f"v_s_ref_{idx}_{uid}.mkv"
+                extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
+                subprocess.run(extract_args, check=True)
+                ref_samples.append(sample_src)
+
             if self.stop_requested:
-                break
-            
-            str_cq = str(current_cq)
-            scores = []
-            is_cached = False
-            
-            if probe_cache is not None and str_cq in probe_cache['Probes']:
-                avg_score = probe_cache['Probes'][str_cq]
-                self.log(f"[PROBE] Pass {attempt}: Cached CQ {current_cq} -> VMAF: {avg_score:.2f}")
-                scores = [avg_score]
-                is_cached = True
-            else:
-                self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
-                
-                for sp in sample_points:
-                    if self.stop_requested:
-                        break
-                    
-                    uid = str(uuid.uuid4())[:8]
-                    sample_src = temp_dir / f"v_s_{uid}.mkv"
-                    sample_enc = temp_dir / f"v_e_{uid}.mkv"
-                    
-                    try:
-                        extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
-                        subprocess.run(extract_args, check=True)
-                        
-                        if self.stop_requested: break
-                        
-                        encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(current_cq), str(sample_enc)]
-                        subprocess.run(encode_args, check=True)
-                        
-                        if self.stop_requested: break
-                        
-                        score = self.calculate_vmaf(sample_src, sample_enc)
-                        if score is not None:
-                            scores.append(score)
-                            
-                    except Exception as e:
-                        self.log(f"[FAIL] Sample processing failed: {e}")
-                    finally:
-                        if sample_src.exists(): sample_src.unlink()
-                        if sample_enc.exists(): sample_enc.unlink()
-                
-                if scores and probe_cache is not None and not self.stop_requested:
-                    avg_score = sum(scores) / len(scores)
-                    probe_cache['Probes'][str_cq] = avg_score
-                    if avg_score > probe_cache['MaxAchievableVmaf']:
-                        probe_cache['MaxAchievableVmaf'] = avg_score
-                        probe_cache['MaxVmafCq'] = current_cq
-                    
-                    try:
-                        with open(config['CacheFile'], 'w') as f:
-                            json.dump(list(config['Cache'].values()), f, indent=4)
-                    except:
-                        pass
-            
-            if self.stop_requested: break
-            
-            if scores:
-                avg_score = sum(scores) / len(scores)
-                if not is_cached:
-                    self.log(f"[PROBE] Pass {attempt}: CQ {current_cq} -> VMAF: {avg_score:.2f}")
-                
-                if avg_score > max_score:
-                    max_score = avg_score
-                    max_score_cq = current_cq
-                
-                if abs(avg_score - target_vmaf) < abs(best_score - target_vmaf):
-                    best_cq = current_cq
-                    best_score = avg_score
-                
-                if abs(avg_score - target_vmaf) <= 0.5:
-                    break
-                
-                direction = 1 if avg_score > target_vmaf else -1
-                
-                if last_dir != 0 and direction != last_dir:
-                    if current_step > 1:
-                        current_step //= 2
-                    else:
-                        break
-                
-                last_dir = direction
-                current_cq += (direction * current_step)
-                
-                if current_cq < 0 or current_cq > 51:
-                    break
-            else:
-                break
-                
-        return best_cq, best_score, max_score, max_score_cq
+                return 26, 0, 0, 26
 
-    def run_ffmpeg_with_progress(self, args, file_index, total_files):
+            best_cq = 26
+            best_score = 0
+            max_score = 0
+            max_score_cq = 26
+            current_step = 4
+            last_dir = 0
+            current_cq = 26
+
+            for attempt in range(1, 16):
+                if self.stop_requested:
+                    break
+                
+                str_cq = str(current_cq)
+                scores = []
+                is_cached = False
+                
+                if probe_cache is not None and str_cq in probe_cache['Probes']:
+                    avg_score = probe_cache['Probes'][str_cq]
+                    self.log(f"[PROBE] Pass {attempt}: Cached CQ {current_cq} -> VMAF: {avg_score:.2f}")
+                    scores = [avg_score]
+                    is_cached = True
+                else:
+                    self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
+                    
+                    for idx, sample_src in enumerate(ref_samples):
+                        if self.stop_requested:
+                            break
+                        
+                        sample_enc = temp_dir / f"v_e_{idx}_{uid}.mkv"
+                        
+                        try:
+                            encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(current_cq), str(sample_enc)]
+                            subprocess.run(encode_args, check=True)
+                            
+                            if self.stop_requested: break
+                            
+                            score = self.calculate_vmaf(sample_src, sample_enc)
+                            if score is not None:
+                                scores.append(score)
+                                
+                        except Exception as e:
+                            self.log(f"[FAIL] Sample processing failed: {e}")
+                        finally:
+                            if sample_enc.exists(): sample_enc.unlink()
+                    
+                    if scores and probe_cache is not None and not self.stop_requested:
+                        avg_score = sum(scores) / len(scores)
+                        probe_cache['Probes'][str_cq] = avg_score
+                        if avg_score > probe_cache['MaxAchievableVmaf']:
+                            probe_cache['MaxAchievableVmaf'] = avg_score
+                            probe_cache['MaxVmafCq'] = current_cq
+                        
+                        try:
+                            with open(config['CacheFile'], 'w') as f:
+                                json.dump(list(config['Cache'].values()), f, indent=4)
+                        except:
+                            pass
+                
+                if self.stop_requested: break
+                
+                if scores:
+                    avg_score = sum(scores) / len(scores)
+                    if not is_cached:
+                        self.log(f"[PROBE] Pass {attempt}: CQ {current_cq} -> VMAF: {avg_score:.2f}")
+                    
+                    if avg_score > max_score:
+                        max_score = avg_score
+                        max_score_cq = current_cq
+                    
+                    if abs(avg_score - target_vmaf) < abs(best_score - target_vmaf):
+                        best_cq = current_cq
+                        best_score = avg_score
+                    
+                    if abs(avg_score - target_vmaf) <= 0.5:
+                        break
+                    
+                    direction = 1 if avg_score > target_vmaf else -1
+                    
+                    if last_dir != 0 and direction != last_dir:
+                        if current_step > 1:
+                            current_step //= 2
+                        else:
+                            break
+                    
+                    last_dir = direction
+                    current_cq += (direction * current_step)
+                    
+                    if current_cq < 0 or current_cq > 51:
+                        break
+                else:
+                    break
+                    
+            return best_cq, best_score, max_score, max_score_cq
+
+        finally:
+            for sample_src in ref_samples:
+                try:
+                    if sample_src.exists():
+                        sample_src.unlink()
+                except:
+                    pass
+
+    def run_ffmpeg_with_progress(self, args, file_index, total_files, file_duration):
         cmd = ['ffmpeg', '-progress', 'pipe:1'] + args
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, universal_newlines=True)
         
@@ -319,8 +335,18 @@ class VideoOptimizerEngine:
                 break
             
             if line:
-                if "out_time=" in line:
-                    self.update_status(f"Processing: {line.strip()}")
+                if "out_time_us=" in line:
+                    try:
+                        val = int(line.split('=')[1].strip())
+                        current_sec = val / 1000000.0
+                        if file_duration > 0:
+                            pct = current_sec / file_duration
+                            pct = max(0.0, min(1.0, pct))
+                            overall_pct = (file_index + pct) / total_files
+                            self.update_progress(overall_pct)
+                            self.update_status(f"Processing: File {file_index + 1}/{total_files} - {pct * 100:.1f}% ({current_sec:.1f}s / {file_duration:.1f}s)")
+                    except:
+                        pass
                 elif "Error" in line or "failed" in line:
                     self.log(f"[FFMPEG] {line.strip()}")
             
@@ -357,7 +383,12 @@ class VideoOptimizerEngine:
         container = config.get('Container', '.mp4')
         if container == 'Original': container = file_path.suffix
             
-        temp_out = file_path.with_suffix(f"{file_path.suffix}.tmp{container}")
+        temp_dir_opt = config.get('TempDir')
+        if temp_dir_opt:
+            uid = str(uuid.uuid4())[:8]
+            temp_out = Path(temp_dir_opt) / f"{file_path.stem}_{uid}.tmp{container}"
+        else:
+            temp_out = file_path.with_suffix(f"{file_path.suffix}.tmp{container}")
         
         if config.get('OnSuccess') == 'Replace Original':
             final_out = file_path.with_suffix(container)
@@ -442,7 +473,7 @@ class VideoOptimizerEngine:
                                 continue
                     
                     self.log(f"[ENCODE] Running final encode (VMAF Target: {target}, CQ: {best_cq})...")
-                    success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files)
+                    success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, duration)
                     
                     if success and temp_out.exists():
                         val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
@@ -461,7 +492,7 @@ class VideoOptimizerEngine:
                 if self.stop_requested: break
                 
                 self.log(f"[ENCODE] Running final encode (CQ: {q})...")
-                success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files)
+                success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, duration)
                 
                 if success and temp_out.exists():
                     val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
@@ -524,7 +555,7 @@ class VideoOptimizerEngine:
 
         return res
 
-    def execute_encode(self, file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files):
+    def execute_encode(self, file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, file_duration):
         target_codec = config['Encoder'].lower()
         ff_args = ['-y', '-loglevel', 'info'] + hw_decode_args + ['-i', str(file_path), '-c:v', config['Encoder'], f"-{config['Mode']}", str(q)]
         
@@ -538,7 +569,7 @@ class VideoOptimizerEngine:
         ff_args += target_audio_args
         ff_args.append(str(temp_out))
         
-        return self.run_ffmpeg_with_progress(ff_args, file_index, total_files)
+        return self.run_ffmpeg_with_progress(ff_args, file_index, total_files, file_duration)
 
     def validate_output(self, file_path, temp_out, final_out, file_info, config):
         self.log("[VALIDATE] Verifying output integrity...")
@@ -634,6 +665,7 @@ class VideoOptimizerGUI(ctk.CTk):
         self.update_treeview_style()
         self.detect_encoders()
         self.load_config() # Load after UI setup to populate fields
+        self.cleanup_orphans()
         self.scan_files()
         
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -962,7 +994,28 @@ class VideoOptimizerGUI(ctk.CTk):
         if path:
             self.entry_path.delete(0, "end")
             self.entry_path.insert(0, path)
+            self.cleanup_orphans()
             self.scan_files()
+
+    def cleanup_orphans(self):
+        try:
+            temp_path = Path(self.entry_path.get()) / ".Video Optimizer" / "temp"
+            if temp_path.exists():
+                self.add_log("[INFO] Cleaning up orphaned temporary files...")
+                import shutil
+                for item in temp_path.iterdir():
+                    if item.is_file():
+                        try:
+                            item.unlink()
+                        except:
+                            pass
+                    elif item.is_dir():
+                        try:
+                            shutil.rmtree(item)
+                        except:
+                            pass
+        except Exception as e:
+            self.add_log(f"[WARN] Failed to clean up temp folder: {e}")
 
     def scan_files(self):
         path = self.entry_path.get()
@@ -1164,8 +1217,7 @@ class VideoOptimizerGUI(ctk.CTk):
         self.lbl_status.configure(text=status)
 
     def update_progress(self, progress_data):
-        # Implement progress update if engine sends detailed data
-        pass
+        self.after(0, lambda: self.progress_bar.set(progress_data))
 
     def start_optimization(self):
         if self.is_processing or not self.video_files:
@@ -1204,19 +1256,32 @@ class VideoOptimizerGUI(ctk.CTk):
         
         # Build Robust SettingsKey
         if self.chk_vmaf.get():
-            q_part = f"vmaf={self.entry_vmaf_ladder.get()}|samples={vmaf_samples}|dur={vmaf_dur}|fallback={bool(self.chk_vmaf_fallback.get())}|ceiling={float(self.slider_vmaf_ceiling.get())}"
+            if self.chk_vmaf_ladder.get():
+                q_part = f"vmaf={self.entry_vmaf_ladder.get()}|samples={vmaf_samples}|dur={vmaf_dur}|fallback={bool(self.chk_vmaf_fallback.get())}|ceiling={float(self.slider_vmaf_ceiling.get())}"
+            else:
+                q_part = f"vmaf_target={int(self.slider_vmaf.get())}|samples={vmaf_samples}|dur={vmaf_dur}|fallback={bool(self.chk_vmaf_fallback.get())}|ceiling={float(self.slider_vmaf_ceiling.get())}"
         else:
             q_part = f"quality={self.entry_ladder.get()}"
         settings_key = f"codec={sel_enc['Codec']}|mode={sel_enc['Mode']}|preset={self.combo_preset.get()}|{q_part}|audio={audio}|container={container}"
+
+        # Ensure work dir and temp dir
+        work_dir = os.path.join(self.entry_path.get(), ".Video Optimizer")
+        if not os.path.exists(work_dir):
+            os.makedirs(work_dir)
+        temp_dir = os.path.join(work_dir, "temp")
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
 
         config = {
             "Encoder": sel_enc['Codec'],
             "Mode": sel_enc['Mode'],
             "VmafEnabled": self.chk_vmaf.get(),
             "VmafTarget": int(self.slider_vmaf.get()),
-            "VmafLadder": sorted([int(x.strip()) for x in self.entry_vmaf_ladder.get().split(',') if x.strip().isdigit()], reverse=True),
+            "VmafLadder": sorted([int(x.strip()) for x in self.entry_vmaf_ladder.get().split(',') if x.strip().isdigit()], reverse=True) if self.chk_vmaf_ladder.get() else [int(self.slider_vmaf.get())],
             "VmafSamples": vmaf_samples,
             "VmafDur": vmaf_dur,
+            "VmafMinCeiling": float(self.slider_vmaf_ceiling.get()),
+            "VmafFallbackEnabled": bool(self.chk_vmaf_fallback.get()),
             "QualityLadder": sorted([int(x.strip()) for x in self.entry_ladder.get().split(',') if x.strip().isdigit()]),
             "Preset": self.combo_preset.get(),
             "Container": container,
@@ -1228,14 +1293,10 @@ class VideoOptimizerGUI(ctk.CTk):
             "CacheEnabled": self.chk_cache.get(),
             "LogEnabled": self.chk_log.get(),
             "SettingsKey": settings_key,
-            "CacheFile": os.path.join(self.entry_path.get(), ".Video Optimizer", "Cache.json"),
+            "CacheFile": os.path.join(work_dir, "Cache.json"),
+            "TempDir": temp_dir,
             "Cache": {}
         }
-
-        # Ensure work dir
-        work_dir = os.path.join(self.entry_path.get(), ".Video Optimizer")
-        if not os.path.exists(work_dir):
-            os.makedirs(work_dir)
 
         # Load Cache
         if config['ResumeEnabled'] and os.path.exists(config['CacheFile']):

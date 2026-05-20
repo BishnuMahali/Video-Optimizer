@@ -1,4 +1,4 @@
-﻿# Ultimate Video Optimizer
+# Ultimate Video Optimizer
 # Version: 2.0.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
@@ -243,6 +243,22 @@ function Get-OptimizationSettingsKey {
     return $key
 }
 
+function Cleanup-Orphans {
+    param(
+        [string]$Path
+    )
+    try {
+        $tempPath = Join-Path $Path ".Video Optimizer\temp"
+        if (Test-Path -LiteralPath $tempPath -PathType Container) {
+            Write-Host " [INFO] Cleaning up orphaned temporary files..." -ForegroundColor Gray
+            Get-ChildItem -LiteralPath $tempPath -File | Remove-Item -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -LiteralPath $tempPath -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Host " [WARN] Failed to clean up temp folder: $_" -ForegroundColor Yellow
+    }
+}
+
 function Save-UnoptimizableCache {
     param(
         [string]$CacheFile,
@@ -352,43 +368,27 @@ $stepOptions = @(1, 2, 3, 4, 5, 6, 8)
 
 function Get-VmafScore {
     param(
-        [string]$InputPath,
+        [System.Collections.Generic.List[string]]$RefSamples,
         [string]$Codec,
         [int]$CQ,
         [string]$Preset
     )
 
     $scores = @()
-    
+    $cores = [System.Environment]::ProcessorCount
+    $threads = [math]::max(1, [math]::min(4, [math]::floor($cores / 2)))
+    $uid = [guid]::NewGuid().ToString().Substring(0, 8)
+    $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
+
     try {
-        # 1. Get duration
-        $durationStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$InputPath" 2>$null | Out-String).Trim()
-        if (-not $durationStr) { return 0 }
-        $duration = [double]::Parse($durationStr, [System.Globalization.CultureInfo]::InvariantCulture)
-        
-        # 2. Determine sample points
-        $samplePoints = @()
-        if ($global:vmafSampleCount -eq 1) {
-            $samplePoints += [math]::Max(0, ($duration / 2) - ($global:vmafSampleDuration / 2))
-        } else {
-            $step = $duration / ($global:vmafSampleCount + 1)
-            for ($i = 1; $i -le $global:vmafSampleCount; $i++) {
-                $samplePoints += [math]::Max(0, ($step * $i) - ($global:vmafSampleDuration / 2))
-            }
-        }
-
-        foreach ($startTime in $samplePoints) {
-            $tempSampleSource = Join-Path $env:TEMP ("vmaf_src_" + [guid]::NewGuid().ToString().Substring(0,8) + ".mkv")
-            $tempSampleEncoded = Join-Path $env:TEMP ("vmaf_enc_" + [guid]::NewGuid().ToString().Substring(0,8) + ".mkv")
-
+        for ($sIdx = 0; $sIdx -lt $RefSamples.Count; $sIdx++) {
+            $sampleSrc = $RefSamples[$sIdx]
+            $sampleEnc = Join-Path $tempFolder "v_e_${sIdx}_${uid}.mkv"
+            
             try {
-                # 3. Extract sample
-                & ffmpeg -y -loglevel error -ss $startTime -t $global:vmafSampleDuration -i $InputPath -map 0:v:0 -an -c:v copy "$tempSampleSource"
-                
-                # 4. Encode sample
                 $activeEnc = ($global:availableEncoders | Where-Object Codec -eq $Codec)
                 $mode = $activeEnc.Mode
-                $ffArgs = @("-y", "-loglevel", "error", "-i", $tempSampleSource, "-c:v", $Codec)
+                $ffArgs = @("-y", "-loglevel", "error", "-i", $sampleSrc, "-c:v", $Codec)
                 
                 switch ($mode) {
                     "crf" { $ffArgs += @("-crf", $CQ) }
@@ -397,18 +397,20 @@ function Get-VmafScore {
                     "global_quality" { $ffArgs += @("-global_quality", $CQ) }
                 }
                 if ($Preset) { $ffArgs += @("-preset", $Preset) }
-                $ffArgs += $tempSampleEncoded
+                $ffArgs += $sampleEnc
+                
                 & ffmpeg @ffArgs
 
-                # 5. Run VMAF comparison
-                $vmafOut = (ffmpeg -i $tempSampleEncoded -i $tempSampleSource -filter_complex "libvmaf" -f null - 2>&1 | Out-String)
-                
-                if ($vmafOut -match "VMAF score: (\d+\.\d+)") {
-                    $scores += [double]$matches[1]
+                if ($LASTEXITCODE -eq 0 -and (Test-Path $sampleEnc)) {
+                    $vmafArgs = @("-i", $sampleEnc, "-i", $sampleSrc, "-filter_complex", "libvmaf=n_threads=$threads", "-f", "null", "-")
+                    $vmafOut = (ffmpeg @vmafArgs 2>&1 | Out-String)
+                    
+                    if ($vmafOut -match "VMAF score: (\d+\.\d+)") {
+                        $scores += [double]$matches[1]
+                    }
                 }
             } finally {
-                if (Test-Path $tempSampleSource) { Remove-Item $tempSampleSource -Force }
-                if (Test-Path $tempSampleEncoded) { Remove-Item $tempSampleEncoded -Force }
+                if (Test-Path $sampleEnc) { Remove-Item $sampleEnc -Force }
             }
         }
 
@@ -498,63 +500,113 @@ function Find-OptimalCq {
     $maxScore = 0
     $maxScoreCQ = $currentCQ
     
-    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-        $strCq = [string]$currentCQ
+    $refSamples = New-Object System.Collections.Generic.List[string]
+    $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
+    
+    try {
+        # 1. Get duration
+        $durationStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$InputPath" 2>$null | Out-String).Trim()
+        if (-not $durationStr) { return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 } }
+        $duration = [double]::Parse($durationStr, [System.Globalization.CultureInfo]::InvariantCulture)
         
-        if ($null -ne $probeCache -and $probeCache.Probes.Contains($strCq)) {
-            $score = $probeCache.Probes[$strCq]
-            Write-Host "     Pass $($attempt): Cached CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor Cyan
+        # 2. Determine sample points
+        $samplePoints = @()
+        if ($global:vmafSampleCount -eq 1) {
+            $samplePoints += [math]::Max(0, ($duration / 2) - ($global:vmafSampleDuration / 2))
         } else {
-            $score = Get-VmafScore -InputPath $InputPath -Codec $Codec -CQ $currentCQ -Preset $Preset
-            Write-Host "     Pass $($attempt): CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
-            
-            if ($null -ne $probeCache -and $score -gt 0) {
-                $probeCache.Probes[$strCq] = $score
-                if ($score -gt $probeCache.MaxAchievableVmaf) {
-                    $probeCache.MaxAchievableVmaf = $score
-                    $probeCache.MaxVmafCq = $currentCQ
-                }
-                try {
-                    $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
-                } catch {}
+            $step = $duration / ($global:vmafSampleCount + 1)
+            for ($i = 1; $i -le $global:vmafSampleCount; $i++) {
+                $samplePoints += [math]::Max(0, ($step * $i) - ($global:vmafSampleDuration / 2))
             }
         }
         
-        if ($score -gt $maxScore) {
-            $maxScore = $score
-            $maxScoreCQ = $currentCQ
-        }
-
-        $diff = [math]::Abs($score - $TargetVmaf)
-        if ($diff -lt $bestDiff) {
-            $bestDiff = $diff
-            $bestCQ = $currentCQ
-            $bestScore = $score
-        }
-
-        # Tolerance of +/- 0.5 from target
-        if ($diff -le 0.5) {
-            break
+        # 3. Extract reference samples exactly ONCE
+        Write-Host "     [PROBE] Extracting reference samples ($global:vmafSampleCount x $($global:vmafSampleDuration)s)..." -ForegroundColor Gray
+        $uid = [guid]::NewGuid().ToString().Substring(0, 8)
+        for ($sIdx = 0; $sIdx -lt $global:vmafSampleCount; $sIdx++) {
+            $startTime = $samplePoints[$sIdx]
+            $sampleSrc = Join-Path $tempFolder "v_s_ref_${sIdx}_${uid}.mkv"
+            try {
+                $extractArgs = @("-y", "-loglevel", "error", "-ss", "$startTime", "-t", "$global:vmafSampleDuration", "-i", "$InputPath", "-map", "0:v:0", "-an", "-c:v", "copy", "$sampleSrc")
+                & ffmpeg @extractArgs
+                if (Test-Path $sampleSrc) {
+                    $refSamples.Add($sampleSrc)
+                }
+            } catch {
+                Write-Host "     [WARN] Failed to extract sample segment at $startTime : $_" -ForegroundColor Yellow
+            }
         }
         
-        $direction = if ($score -gt $TargetVmaf) { 1 } else { -1 }
+        if ($refSamples.Count -eq 0) {
+            Write-Host "     [ERROR] Reference sample extraction failed." -ForegroundColor Red
+            return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 }
+        }
 
-        # Detect overshoot
-        if ($lastDirection -ne 0 -and $direction -ne $lastDirection) {
-            if ($currentStep -gt 1) {
-                $currentStep = [int][math]::Max(1, [math]::Floor($currentStep / 2))
-                Write-Host "       Overshoot detected. Reducing step to $currentStep" -ForegroundColor DarkGray
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            $strCq = [string]$currentCQ
+            
+            if ($null -ne $probeCache -and $probeCache.Probes.Contains($strCq)) {
+                $score = $probeCache.Probes[$strCq]
+                Write-Host "     Pass $($attempt) : Cached CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor Cyan
             } else {
-                Write-Host "       Maximum precision reached." -ForegroundColor DarkGray
+                $score = Get-VmafScore -RefSamples $refSamples -Codec $Codec -CQ $currentCQ -Preset $Preset
+                Write-Host "     Pass $($attempt) : CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
+                
+                if ($null -ne $probeCache -and $score -gt 0) {
+                    $probeCache.Probes[$strCq] = $score
+                    if ($score -gt $probeCache.MaxAchievableVmaf) {
+                        $probeCache.MaxAchievableVmaf = $score
+                        $probeCache.MaxVmafCq = $currentCQ
+                    }
+                    try {
+                        $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
+                    } catch {}
+                }
+            }
+            
+            if ($score -gt $maxScore) {
+                $maxScore = $score
+                $maxScoreCQ = $currentCQ
+            }
+
+            $diff = [math]::Abs($score - $TargetVmaf)
+            if ($diff -lt $bestDiff) {
+                $bestDiff = $diff
+                $bestCQ = $currentCQ
+                $bestScore = $score
+            }
+
+            # Tolerance of +/- 0.5 from target
+            if ($diff -le 0.5) {
                 break
             }
-        }
-        
-        $lastDirection = $direction
-        $currentCQ += ($direction * $currentStep)
+            
+            $direction = if ($score -gt $TargetVmaf) { 1 } else { -1 }
 
-        if ($currentCQ -lt $global:vmafMinCQ) { $currentCQ = $global:vmafMinCQ; break }
-        if ($currentCQ -gt $global:vmafMaxCQ) { $currentCQ = $global:vmafMaxCQ; break }
+            # Detect overshoot
+            if ($lastDirection -ne 0 -and $direction -ne $lastDirection) {
+                if ($currentStep -gt 1) {
+                    $currentStep = [int][math]::Max(1, [math]::Floor($currentStep / 2))
+                    Write-Host "       Overshoot detected. Reducing step to $currentStep" -ForegroundColor DarkGray
+                } else {
+                    Write-Host "       Maximum precision reached." -ForegroundColor DarkGray
+                    break
+                }
+            }
+            
+            $lastDirection = $direction
+            $currentCQ += ($direction * $currentStep)
+
+            if ($currentCQ -lt $global:vmafMinCQ) { $currentCQ = $global:vmafMinCQ; break }
+            if ($currentCQ -gt $global:vmafMaxCQ) { $currentCQ = $global:vmafMaxCQ; break }
+        }
+    } finally {
+        # Clean up ref sample segments
+        if ($null -ne $refSamples) {
+            foreach ($s in $refSamples) {
+                if (Test-Path $s) { Remove-Item $s -Force }
+            }
+        }
     }
     
     Write-Host "  $($S.Bullet) Optimal CQ Found: $bestCQ (VMAF: $([math]::Round($bestScore,2)))" -ForegroundColor Green
@@ -918,6 +970,14 @@ if (-not (Test-Path -LiteralPath $targetFolder -PathType Container)) {
     return
 }
 
+# Setup quarantine temp folder
+$global:tempDir = Join-Path $targetFolder ".Video Optimizer\temp"
+if (-not (Test-Path -LiteralPath $global:tempDir)) {
+    New-Item -ItemType Directory -Path $global:tempDir -Force | Out-Null
+}
+
+Cleanup-Orphans -Path $targetFolder
+
 $logFile = Join-Path $targetFolder "Optimization_Log.txt"
 $cacheFile = Join-Path $targetFolder "Optimization_Cache.json"
 Add-Content -Path $logFile -Value "`n========================================"
@@ -1037,8 +1097,9 @@ if ($totalFiles -eq 0) {
             Write-Host "  $($S.Bullet) Codecs: [V:$vCodec, A:$aCodec]" -ForegroundColor Gray
 
             # --- Finalize Paths ---
+            $uid = [guid]::NewGuid().ToString().Substring(0, 8)
             $finalExt = if ($container -eq "Original") { $file.Extension } else { ".$($container.ToLower())" }
-            $tempOutput = Join-Path $dir ($name + "_TEMP" + $finalExt)
+            $tempOutput = Join-Path $global:tempDir ($name + "_TEMP_${uid}" + $finalExt)
             
             if ($onSuccessAction -eq "Replace Original") {
                 $finalOutput = Join-Path $dir ($name + $finalExt)
@@ -1246,6 +1307,7 @@ if ($totalFiles -eq 0) {
                     }
                 }
                 if ($success -or $unoptimizable -or $aborted) { break }
+            }
             }
 
             if ($aborted) { break }
