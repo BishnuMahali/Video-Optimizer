@@ -1,5 +1,6 @@
 import os
 import sys
+# Version: 3.0.0
 import json
 import time
 import uuid
@@ -780,7 +781,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro")
+        self.title("Ultimate Video Optimizer Pro v3.0.0")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(
