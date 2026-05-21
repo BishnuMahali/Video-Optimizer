@@ -669,7 +669,11 @@ class VideoOptimizerGUI(ctk.CTk):
         self.processed_count = 0
         
         # Internal App Data
-        self.app_dir = Path(os.environ.get('APPDATA', '.')) / "Video Optimizer"
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            self.app_dir = Path(appdata) / "Video Optimizer"
+        else:
+            self.app_dir = Path.home() / ".Video_Optimizer"
         self.config_file = self.app_dir / "config.json"
         if not self.app_dir.exists(): self.app_dir.mkdir(parents=True)
 
@@ -683,6 +687,7 @@ class VideoOptimizerGUI(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_closing(self):
+        self.save_config()
         if self.is_processing:
             self.stop_optimization()
             self.add_log("[WARN] Gracefully stopping before exit... Please wait.")
@@ -1460,5 +1465,10 @@ class VideoOptimizerGUI(ctk.CTk):
         self.btn_start.configure(state="disabled")
 
 if __name__ == "__main__":
-    app = VideoOptimizerGUI()
-    app.mainloop()
+    try:
+        app = VideoOptimizerGUI()
+        app.mainloop()
+    except KeyboardInterrupt:
+        if 'app' in locals():
+            app.save_config()
+        sys.exit(0)
