@@ -443,6 +443,15 @@ class VideoOptimizerEngine:
                     best_score = local_probes[closest_cq]
                     self.log(f"[PROBE] Final evaluation: fallback to closest CQ {best_cq} with VMAF {best_score:.2f}")
 
+            if probe_cache is not None and target_unreachable:
+                probe_cache['MaxVmafCq'] = best_cq
+                probe_cache['MaxAchievableVmaf'] = best_score
+                try:
+                    with open(config['CacheFile'], 'w') as f:
+                        json.dump(list(config['Cache'].values()), f, indent=4)
+                except:
+                    pass
+
             return best_cq, best_score, max_score, max_score_cq
 
         except Exception as e:
@@ -603,10 +612,9 @@ class VideoOptimizerEngine:
                         
                         if max_score_val < target - 0.5:
                             max_achievable_vmaf = max_score_val
-                            max_vmaf_cq = max_score_cq
+                            max_vmaf_cq = best_cq
                             if config.get('VmafFallbackEnabled', False):
-                                self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Fallback Enabled: using CQ {max_score_cq}.")
-                                best_cq = max_score_cq
+                                self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Fallback Enabled: using CQ {best_cq}.")
                                 res['FinalVmaf'] = f"{max_score_val:.1f}"
                             else:
                                 self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping target encode.")

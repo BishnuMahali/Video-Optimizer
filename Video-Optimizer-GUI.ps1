@@ -731,6 +731,13 @@ $btnStart.Add_Click({
                                             $bestScore = $localProbes[$closestCq]
                                             Write-Output @{ Type="Log"; Msg="[PROBE] Final evaluation: fallback to closest CQ $bestCQ with VMAF $([math]::Round($bestScore, 2))" }
                                         }
+                                        if ($probeCache -ne $null -and $targetUnreachable) {
+                                            $probeCache.MaxVmafCq = $bestCQ
+                                            $probeCache.MaxAchievableVmaf = $bestScore
+                                            try {
+                                                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile
+                                            } catch {}
+                                        }
                                     }
                             } finally {
                                 foreach ($sampleSrc in $refSamples) {
@@ -748,10 +755,9 @@ $btnStart.Add_Click({
                             
                             if ($maxScore -lt $target - 0.5) {
                                 $maxAchievableVmaf = $maxScore
-                                $maxVmafCq = $maxScoreCq
+                                $maxVmafCq = $bestCQ
                                 if ($config.VmafFallbackEnabled) {
-                                    Write-Output @{ Type="Log"; Msg="[WARN] Quality ceiling hit. Max achievable VMAF: $([math]::Round($maxScore,1)) (Target: $target). Fallback Enabled: using CQ $maxScoreCq." }
-                                    $bestCQ = $maxScoreCq
+                                    Write-Output @{ Type="Log"; Msg="[WARN] Quality ceiling hit. Max achievable VMAF: $([math]::Round($maxScore,1)) (Target: $target). Fallback Enabled: using CQ $bestCQ." }
                                     $res.FinalVmaf = "$([math]::Round($maxScore,1))"
                                 } else {
                                     Write-Output @{ Type="Log"; Msg="[WARN] Quality ceiling hit. Max achievable VMAF: $([math]::Round($maxScore,1)) (Target: $target). Skipping target encode." }

@@ -765,6 +765,13 @@ function Find-OptimalCq {
                 Write-Host "     [PROBE] Final evaluation: fallback to closest CQ $bestCQ with VMAF $([math]::Round($bestScore, 2))" -ForegroundColor Cyan
             }
         }
+        if ($probeCache -ne $null -and $targetUnreachable) {
+            $probeCache.MaxVmafCq = $bestCQ
+            $probeCache.MaxAchievableVmaf = $bestScore
+            try {
+                $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
+            } catch {}
+        }
         
         Write-Host "  $($S.Bullet) Optimal CQ Found: $bestCQ (VMAF: $([math]::Round($bestScore,2)))" -ForegroundColor Green
         return [PSCustomObject]@{ CQ = $bestCQ; Score = $bestScore; MaxScore = $maxScore; MaxScoreCQ = $maxScoreCQ }
@@ -1365,10 +1372,9 @@ if ($totalFiles -eq 0) {
 
                             if ($optimalResult.MaxScore -lt $currentTarget - 0.5) {
                                 $maxAchievableVmaf = $optimalResult.MaxScore
-                                $maxVmafCq = $optimalResult.MaxScoreCQ
+                                $maxVmafCq = $optimalCq
                                 if ($global:vmafFallback) {
-                                    Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Fallback Enabled: Encoding at CQ: $($optimalResult.MaxScoreCQ)." -ForegroundColor Yellow
-                                    $optimalCq = $optimalResult.MaxScoreCQ
+                                    Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Fallback Enabled: Encoding at CQ: $optimalCq." -ForegroundColor Yellow
                                 } else {
                                     Write-Host "  $($S.Bullet) Quality ceiling hit. Max achievable VMAF: $([math]::Round($optimalResult.MaxScore,1)) (Target: $currentTarget). Skipping target encode." -ForegroundColor Yellow
                                     continue
