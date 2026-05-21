@@ -436,70 +436,69 @@ function Find-OptimalCq {
         [string]$Signature
     )
 
-    Write-Host "  $($S.Bullet) Probing VMAF quality (Target: $TargetVmaf)... " -ForegroundColor Gray
-    
-    $fileKey = Get-FileCacheKey $InputPath
-    $probeKey = "codec=$Codec|preset=$Preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
-    $probeCache = $null
-
-    if ($null -ne $FullCache -and $global:enableCache) {
-        if (-not $FullCache.Contains($fileKey)) {
-            $FullCache[$fileKey] = [ordered]@{ Path = $InputPath; Signature = $Signature }
-        }
-        $fileCache = $FullCache[$fileKey]
-        
-        $sigMatch = $false
-        if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('Signature').Count -gt 0) {
-            if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
-        } elseif ($fileCache -is [hashtable] -and $fileCache.Contains('Signature')) {
-            if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
-        }
-        
-        if (-not $sigMatch) {
-            if ($fileCache -is [PSCustomObject]) {
-                $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
-                $fileCache | Add-Member -MemberType NoteProperty -Name "Signature" -Value $Signature -Force
-            } else {
-                $fileCache.VmafProbeCache = @{}
-                $fileCache.Signature = $Signature
-            }
-        } else {
-            if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('VmafProbeCache').Count -eq 0) {
-                $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
-            } elseif ($fileCache -is [hashtable] -and -not $fileCache.Contains('VmafProbeCache')) {
-                $fileCache.VmafProbeCache = @{}
-            }
-        }
-        
-        $vpc = if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache } else { $fileCache.VmafProbeCache }
-        if ($vpc -is [PSCustomObject]) {
-            $hash = @{}
-            foreach ($p in $vpc.psobject.properties) { $hash[$p.Name] = $p.Value }
-            $vpc = $hash
-            if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache = $vpc } else { $fileCache.VmafProbeCache = $vpc }
-        }
-        
-        if (-not $vpc.Contains($probeKey)) {
-            $vpc[$probeKey] = @{ Probes = @{}; MaxAchievableVmaf = 0.0; MaxVmafCq = 26 }
-        }
-        $probeCache = $vpc[$probeKey]
-        if ($probeCache.Probes -is [PSCustomObject]) {
-            $ph = @{}
-            foreach ($p in $probeCache.Probes.psobject.properties) { $ph[$p.Name] = $p.Value }
-            $probeCache.Probes = $ph
-        }
-    }
-
-    $bestCQ = [math]::Round(($global:vmafMinCQ + $global:vmafMaxCQ) / 2)
-    $bestDiff = 100
-    $bestScore = 0
-    $maxScore = 0
-    $maxScoreCQ = $bestCQ
-    
     $refSamples = New-Object System.Collections.Generic.List[string]
     $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
-    
+
     try {
+        Write-Host "  $($S.Bullet) Probing VMAF quality (Target: $TargetVmaf)... " -ForegroundColor Gray
+        
+        $fileKey = Get-FileCacheKey $InputPath
+        $probeKey = "codec=$Codec|preset=$Preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
+        $probeCache = $null
+
+        if ($null -ne $FullCache -and $global:enableCache) {
+            if (-not $FullCache.Contains($fileKey)) {
+                $FullCache[$fileKey] = [ordered]@{ Path = $InputPath; Signature = $Signature }
+            }
+            $fileCache = $FullCache[$fileKey]
+            
+            $sigMatch = $false
+            if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('Signature').Count -gt 0) {
+                if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
+            } elseif ($fileCache -is [hashtable] -and $fileCache.Contains('Signature')) {
+                if ($fileCache.Signature -eq $Signature) { $sigMatch = $true }
+            }
+            
+            if (-not $sigMatch) {
+                if ($fileCache -is [PSCustomObject]) {
+                    $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
+                    $fileCache | Add-Member -MemberType NoteProperty -Name "Signature" -Value $Signature -Force
+                } else {
+                    $fileCache.VmafProbeCache = @{}
+                    $fileCache.Signature = $Signature
+                }
+            } else {
+                if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('VmafProbeCache').Count -eq 0) {
+                    $fileCache | Add-Member -MemberType NoteProperty -Name "VmafProbeCache" -Value @{} -Force
+                } elseif ($fileCache -is [hashtable] -and -not $fileCache.Contains('VmafProbeCache')) {
+                    $fileCache.VmafProbeCache = @{}
+                }
+            }
+            
+            $vpc = if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache } else { $fileCache.VmafProbeCache }
+            if ($vpc -is [PSCustomObject]) {
+                $hash = @{}
+                foreach ($p in $vpc.psobject.properties) { $hash[$p.Name] = $p.Value }
+                $vpc = $hash
+                if ($fileCache -is [PSCustomObject]) { $fileCache.VmafProbeCache = $vpc } else { $fileCache.VmafProbeCache = $vpc }
+            }
+            
+            if (-not $vpc.Contains($probeKey)) {
+                $vpc[$probeKey] = @{ Probes = @{}; MaxAchievableVmaf = 0.0; MaxVmafCq = 26 }
+            }
+            $probeCache = $vpc[$probeKey]
+            if ($probeCache.Probes -is [PSCustomObject]) {
+                $ph = @{}
+                foreach ($p in $probeCache.Probes.psobject.properties) { $ph[$p.Name] = $p.Value }
+                $probeCache.Probes = $ph
+            }
+        }
+
+        $bestCQ = [math]::Round(($global:vmafMinCQ + $global:vmafMaxCQ) / 2)
+        $bestScore = 0.0
+        $maxScore = 0.0
+        $maxScoreCQ = $bestCQ
+        
         # 1. Get duration
         $durationStr = (ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$InputPath" 2>$null | Out-String).Trim()
         if (-not $durationStr) { return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 } }
@@ -582,8 +581,8 @@ function Find-OptimalCq {
         $cqMax = $global:vmafMaxCQ
 
         $bestCQ = $cqMin
-        $bestScore = 0
-        $maxScore = 0
+        $bestScore = 0.0
+        $maxScore = 0.0
         $maxScoreCQ = $cqMin
         $skipSearch = $false
 
@@ -593,7 +592,7 @@ function Find-OptimalCq {
         # 1. Probe floor extreme (cqMax, lowest quality) first
         Write-Host "     [PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." -ForegroundColor Gray
         $floorScore = Invoke-CqProbe -CqVal $cqMax -Label "Boundary Floor: "
-        if ($floorScore -gt 0) {
+        if ($null -ne $floorScore -and $floorScore -gt 0) {
             $bestCQ = $cqMax
             $bestScore = $floorScore
             $maxScore = $floorScore
@@ -609,7 +608,7 @@ function Find-OptimalCq {
         if (-not $skipSearch) {
             Write-Host "     [PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." -ForegroundColor Gray
             $ceilingScore = Invoke-CqProbe -CqVal $cqMin -Label "Boundary Ceiling: "
-            if ($ceilingScore -gt 0) {
+            if ($null -ne $ceilingScore -and $ceilingScore -gt 0) {
                 if ($ceilingScore -gt $maxScore) {
                     $maxScore = $ceilingScore
                     $maxScoreCQ = $cqMin
@@ -619,49 +618,58 @@ function Find-OptimalCq {
                 # If ceiling score cannot reach target, adjust effective target and continue search
                 if ($ceilingScore -lt $TargetVmaf) {
                     $targetUnreachable = $true
-                    $toleranceVal = $ceilingScore - 0.15
-                    $floorVal = if ($null -ne $floorScore) { $floorScore } else { 0.0 }
-                    $effectiveTarget = [math]::max($floorVal, $toleranceVal)
-                    Write-Host "     [PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $TargetVmaf). Adjusting effective VMAF target to $([math]::Round($effectiveTarget, 2)) and continuing search." -ForegroundColor Yellow
+                    $effectiveTarget = $ceilingScore
+                    Write-Host "     [PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $TargetVmaf). Adjusting effective VMAF target to known ceiling $([math]::Round($effectiveTarget, 2)) and continuing search." -ForegroundColor Yellow
                 }
             }
         }
 
-        # 3. Perform binary search targeting effective target
+        # 3. Perform Stage 1 binary search targeting effective target
         if (-not $skipSearch) {
             $lowCq = $cqMin
             $highCq = $cqMax
+            $finalMidCq = $cqMin
+            $finalVmaf = if ($null -ne $ceilingScore) { $ceilingScore } else { 0.0 }
+            $earlyPlateauBreak = $false
             
             for ($attempt = 1; $attempt -le 15; $attempt++) {
-                # Plateau Detection: check if we have 3 CQs returning identical scores (within 0.05)
+                # Plateau Detection: check if we have 3 probed CQs with VMAF within 0.05 tolerance
                 if ($localProbes.Count -ge 3) {
                     $sortedKeys = $localProbes.Keys | Sort-Object { $localProbes[$_] } -Descending
+                    $plateauDetected = $false
                     for ($i = 0; $i -lt ($sortedKeys.Count - 2); $i++) {
                         $k1 = $sortedKeys[$i]
                         $k2 = $sortedKeys[$i+1]
                         $k3 = $sortedKeys[$i+2]
                         if ([math]::Abs($localProbes[$k1] - $localProbes[$k3]) -le 0.05) {
-                            # We found a plateau!
                             $plateauCq = [math]::max($k1, [math]::max($k2, $k3))
-                            if ($plateauCq -gt $lowCq) {
-                                Write-Host "     [PROBE] Plateau detected at CQ $k3, $k2, $k1 (Scores: $([math]::Round($localProbes[$k3], 2)), $([math]::Round($localProbes[$k2], 2)), $([math]::Round($localProbes[$k1], 2))). Narrowing search from below to CQ $plateauCq." -ForegroundColor Yellow
-                                $lowCq = $plateauCq
-                            }
+                            Write-Host "     [PROBE] Plateau detected at CQ $k3, $k2, $k1 (Scores: $([math]::Round($localProbes[$k3], 2)), $([math]::Round($localProbes[$k2], 2)), $([math]::Round($localProbes[$k1], 2))). Stopping first search phase early." -ForegroundColor Yellow
+                            $finalMidCq = $plateauCq
+                            $finalVmaf = $localProbes[$plateauCq]
+                            $plateauDetected = $true
+                            $earlyPlateauBreak = $true
+                            break
                         }
                     }
+                    if ($plateauDetected) { break }
                 }
 
                 if (($highCq - $lowCq) -le 1) { break }
                 
                 $midCq = [math]::Floor(($lowCq + $highCq) / 2)
-                
                 $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
-                if ($score -le 0) { break }
+                if ($score -eq $null -or $score -le 0) { break }
                 
                 if ($score -gt $maxScore) {
                     $maxScore = $score
                     $maxScoreCQ = $midCq
                 }
+                if ($bestScore -eq 0 -or [math]::Abs($score - $TargetVmaf) -lt [math]::Abs($bestScore - $TargetVmaf)) {
+                    $bestCQ = $midCq
+                    $bestScore = $score
+                }
+                $finalMidCq = $midCq
+                $finalVmaf = $score
                 
                 if ($score -ge $effectiveTarget) {
                     # Quality is enough/high, try to compress more (higher CQ value)
@@ -671,21 +679,76 @@ function Find-OptimalCq {
                     $highCq = $midCq
                 }
             }
+
+            # 4. Stage 2 Refinement Binary Search (Directional Search)
+            Write-Host "     [PROBE] Stage 1 finished. Final midpoint CQ $finalMidCq has VMAF $([math]::Round($finalVmaf, 2))." -ForegroundColor Gray
+            
+            $similarCq = $finalMidCq
+            if ($finalVmaf -ge $effectiveTarget) {
+                # Case A: Quality is sufficient. Search to the right (higher CQs / more compression)
+                $candidates = @()
+                foreach ($k in $localProbes.Keys) {
+                    if ($k -gt $finalMidCq) {
+                        $candidates += $k
+                    }
+                }
+                if ($candidates.Count -gt 0) {
+                    $similarCq = $candidates | Sort-Object { [math]::Abs($localProbes[$_] - $effectiveTarget) } | Select-Object -First 1
+                } else {
+                    $similarCq = $cqMax
+                }
+                Write-Host "     [PROBE] VMAF >= target. Refining search to the right (higher CQs) between $finalMidCq and $similarCq..." -ForegroundColor Yellow
+            } else {
+                # Case B: Quality is too low. Search to the left (lower CQs / higher quality)
+                $candidates = @()
+                foreach ($k in $localProbes.Keys) {
+                    if ($k -lt $finalMidCq) {
+                        $candidates += $k
+                    }
+                }
+                if ($candidates.Count -gt 0) {
+                    $similarCq = $candidates | Sort-Object { [math]::Abs($localProbes[$_] - $effectiveTarget) } | Select-Object -First 1
+                } else {
+                    $similarCq = $cqMin
+                }
+                Write-Host "     [PROBE] VMAF < target. Refining search to the left (lower CQs) between $similarCq and $finalMidCq..." -ForegroundColor Yellow
+            }
+
+            $refineLow = [math]::min($finalMidCq, $similarCq)
+            $refineHigh = [math]::max($finalMidCq, $similarCq)
+
+            # Run second binary search
+            for ($attemptRef = 1; $attemptRef -le 9; $attemptRef++) {
+                if (($refineHigh - $refineLow) -le 1) { break }
+                
+                $midCq = [math]::Floor(($refineLow + $refineHigh) / 2)
+                $score = Invoke-CqProbe -CqVal $midCq -Label "Refinement Pass $attemptRef : "
+                if ($score -eq $null -or $score -le 0) { break }
+                
+                if ($score -gt $maxScore) {
+                    $maxScore = $score
+                    $maxScoreCQ = $midCq
+                }
+                if ($bestScore -eq 0 -or [math]::Abs($score - $TargetVmaf) -lt [math]::Abs($bestScore - $TargetVmaf)) {
+                    $bestCQ = $midCq
+                    $bestScore = $score
+                }
+                
+                if ($score -ge $effectiveTarget) {
+                    $refineLow = $midCq
+                } else {
+                    $refineHigh = $midCq
+                }
+            }
         }
 
-        # 4. Final selection: find the best probed CQ
+        # 5. Final selection: choose the best optimal CQ from all tested CQs
         if ($localProbes.Count -gt 0) {
             $validCqs = @()
             foreach ($c_cq in $localProbes.Keys) {
                 $c_score = $localProbes[$c_cq]
-                if ($targetUnreachable) {
-                    if ($null -ne $ceilingScore -and $c_score -ge ($ceilingScore - 0.15)) {
-                        $validCqs += ,@($c_cq, $c_score)
-                    }
-                } else {
-                    if ($c_score -ge $TargetVmaf) {
-                        $validCqs += ,@($c_cq, $c_score)
-                    }
+                if ($c_score -ge ($effectiveTarget - 0.05)) {
+                    $validCqs += ,@($c_cq, $c_score)
                 }
             }
             if ($validCqs.Count -gt 0) {
@@ -702,6 +765,13 @@ function Find-OptimalCq {
                 Write-Host "     [PROBE] Final evaluation: fallback to closest CQ $bestCQ with VMAF $([math]::Round($bestScore, 2))" -ForegroundColor Cyan
             }
         }
+        
+        Write-Host "  $($S.Bullet) Optimal CQ Found: $bestCQ (VMAF: $([math]::Round($bestScore,2)))" -ForegroundColor Green
+        return [PSCustomObject]@{ CQ = $bestCQ; Score = $bestScore; MaxScore = $maxScore; MaxScoreCQ = $maxScoreCQ }
+
+    } catch {
+        Write-Host "     [CRITICAL] Thread Error in Find-OptimalCq: $_" -ForegroundColor Red
+        return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 }
     } finally {
         # Clean up ref sample segments
         if ($null -ne $refSamples) {
@@ -710,9 +780,6 @@ function Find-OptimalCq {
             }
         }
     }
-    
-    Write-Host "  $($S.Bullet) Optimal CQ Found: $bestCQ (VMAF: $([math]::Round($bestScore,2)))" -ForegroundColor Green
-    return [PSCustomObject]@{ CQ = $bestCQ; Score = $bestScore; MaxScore = $maxScore; MaxScoreCQ = $maxScoreCQ }
 }
 
 # --- Preset Options ---

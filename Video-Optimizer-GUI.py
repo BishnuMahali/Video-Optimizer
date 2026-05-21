@@ -142,71 +142,78 @@ class VideoOptimizerEngine:
         return None
 
     def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None):
-        if target_vmaf is None:
-            target_vmaf = config.get('VmafTarget', 93)
-            
-        self.log(f"[PROBE] Starting VMAF search (Target: {target_vmaf}) for: {Path(file_path).name}")
-        duration = self.get_video_duration(file_path)
-        samples_count = config.get('VmafSamples', 3)
-        sample_dur = config.get('VmafDur', 5)
-        encoder = config.get('Encoder', 'libx264')
-        preset = config.get('Preset', 'medium')
-        mode_flag = config.get('Mode', 'crf')
-        
-        # Hardware Decode Detection
-        hw_decode_args = []
-        if 'nvenc' in encoder: hw_decode_args = ['-hwaccel', 'cuda']
-        elif 'qsv' in encoder: hw_decode_args = ['-hwaccel', 'qsv']
-        elif 'amf' in encoder: hw_decode_args = ['-hwaccel', 'd3d11va']
-
-        # Probe Cache Setup
-        probe_key = f"codec={encoder}|preset={preset}|samples={samples_count}|dur={sample_dur}"
-        cache_key = str(file_path).lower()
-        probe_cache = None
-        
-        if config.get('CacheEnabled') and signature:
-            if 'Cache' not in config: config['Cache'] = {}
-            if cache_key not in config['Cache']: config['Cache'][cache_key] = {}
-            file_cache = config['Cache'][cache_key]
-            
-            if file_cache.get('Signature') != signature:
-                file_cache['VmafProbeCache'] = {}
-                file_cache['Signature'] = signature
-                
-            if 'VmafProbeCache' not in file_cache: file_cache['VmafProbeCache'] = {}
-            if probe_key not in file_cache['VmafProbeCache']:
-                file_cache['VmafProbeCache'][probe_key] = {
-                    'Probes': {},
-                    'MaxAchievableVmaf': 0.0,
-                    'MaxVmafCq': 26
-                }
-            probe_cache = file_cache['VmafProbeCache'][probe_key]
-            
-            if probe_cache.get('Probes'):
-                closest_cq = None
-                closest_diff = 100
-                closest_score = 0
-                for c_cq, c_score in probe_cache['Probes'].items():
-                    diff = abs(c_score - target_vmaf)
-                    if diff < closest_diff:
-                        closest_diff = diff
-                        closest_cq = int(c_cq)
-                        closest_score = c_score
-                
-                if closest_diff <= 0.5:
-                    self.log(f"[PROBE] Found ideal cached match: CQ {closest_cq} -> VMAF {closest_score:.2f} (Target: {target_vmaf})")
-                    return closest_cq, closest_score, probe_cache.get('MaxAchievableVmaf', 0), probe_cache.get('MaxVmafCq', 26)
-
-        if samples_count == 1:
-            sample_points = [duration / 2]
-        else:
-            sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
-
-        temp_dir = Path(os.environ.get('TEMP', '.'))
         ref_samples = []
-        uid = str(uuid.uuid4())[:8]
-
         try:
+            best_cq = 26
+            best_score = 0.0
+            max_score = 0.0
+            max_score_cq = 26
+            
+            if target_vmaf is None:
+                target_vmaf = config.get('VmafTarget', 93)
+                
+            self.log(f"[PROBE] Starting VMAF search (Target: {target_vmaf}) for: {Path(file_path).name}")
+            duration = self.get_video_duration(file_path)
+            samples_count = config.get('VmafSamples', 3)
+            sample_dur = config.get('VmafDur', 5)
+            encoder = config.get('Encoder', 'libx264')
+            preset = config.get('Preset', 'medium')
+            mode_flag = config.get('Mode', 'crf')
+            
+            # Hardware Decode Detection
+            hw_decode_args = []
+            if 'nvenc' in encoder: hw_decode_args = ['-hwaccel', 'cuda']
+            elif 'qsv' in encoder: hw_decode_args = ['-hwaccel', 'qsv']
+            elif 'amf' in encoder: hw_decode_args = ['-hwaccel', 'd3d11va']
+
+            # Probe Cache Setup
+            probe_key = f"codec={encoder}|preset={preset}|samples={samples_count}|dur={sample_dur}"
+            cache_key = str(file_path).lower()
+            probe_cache = None
+            
+            if config.get('CacheEnabled') and signature:
+                if 'Cache' not in config: config['Cache'] = {}
+                if cache_key not in config['Cache']: config['Cache'][cache_key] = {}
+                file_cache = config['Cache'][cache_key]
+                
+                if file_cache.get('Signature') != signature:
+                    file_cache['VmafProbeCache'] = {}
+                    file_cache['Signature'] = signature
+                    
+                if 'VmafProbeCache' not in file_cache: file_cache['VmafProbeCache'] = {}
+                if probe_key not in file_cache['VmafProbeCache']:
+                    file_cache['VmafProbeCache'][probe_key] = {
+                        'Probes': {},
+                        'MaxAchievableVmaf': 0.0,
+                        'MaxVmafCq': 26
+                    }
+                probe_cache = file_cache['VmafProbeCache'][probe_key]
+                
+                if probe_cache.get('Probes'):
+                    closest_cq = None
+                    closest_diff = 100
+                    closest_score = 0
+                    for c_cq, c_score in probe_cache['Probes'].items():
+                        diff = abs(c_score - target_vmaf)
+                        if diff < closest_diff:
+                            closest_diff = diff
+                            closest_cq = int(c_cq)
+                            closest_score = c_score
+                    
+                    if closest_diff <= 0.5:
+                        self.log(f"[PROBE] Found ideal cached match: CQ {closest_cq} -> VMAF {closest_score:.2f} (Target: {target_vmaf})")
+                        return closest_cq, closest_score, probe_cache.get('MaxAchievableVmaf', 0), probe_cache.get('MaxVmafCq', 26)
+
+            if samples_count == 1:
+                sample_points = [duration / 2]
+            else:
+                if duration is None:
+                    duration = 0.0
+                sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
+
+            temp_dir = Path(os.environ.get('TEMP', '.'))
+            uid = str(uuid.uuid4())[:8]
+
             self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
             for idx, sp in enumerate(sample_points):
                 if self.stop_requested:
@@ -217,12 +224,8 @@ class VideoOptimizerEngine:
                 ref_samples.append(sample_src)
 
             if self.stop_requested:
-                return 26, 0, 0, 26
+                return 26, 0.0, 0.0, 26
 
-            best_cq = 26
-            best_score = 0
-            max_score = 0
-            max_score_cq = 26
             local_probes = {}
             if probe_cache is not None and 'Probes' in probe_cache:
                 for k, v in probe_cache['Probes'].items():
@@ -295,8 +298,8 @@ class VideoOptimizerEngine:
             cq_max = config.get('CqMax', 51)
             
             best_cq = cq_min
-            best_score = 0
-            max_score = 0
+            best_score = 0.0
+            max_score = 0.0
             max_score_cq = cq_min
 
             # 1. Check CQ/CRF cq_max (floor) and record/remember output data
@@ -324,32 +327,40 @@ class VideoOptimizerEngine:
                 # If even the highest quality cannot reach target VMAF
                 if ceiling_score < target_vmaf:
                     target_unreachable = True
-                    # Dynamically adjust the target to ceiling - 0.15
-                    effective_target = max(floor_score if floor_score is not None else 0.0, ceiling_score - 0.15)
-                    self.log(f"[PROBE] Ceiling CQ {cq_min} cannot reach target ({ceiling_score:.2f} < {target_vmaf}). Adjusting effective VMAF target to {effective_target:.2f} and continuing search.")
+                    # Dynamically adjust the target to ceiling directly as per user request (no tolerance subtracted)
+                    effective_target = ceiling_score
+                    self.log(f"[PROBE] Ceiling CQ {cq_min} cannot reach target ({ceiling_score:.2f} < {target_vmaf}). Adjusting effective VMAF target to known ceiling {effective_target:.2f} and continuing search.")
 
             if self.stop_requested:
                 return best_cq, best_score, max_score, max_score_cq
 
-            # 3. If target lies in between, proceed with binary search
+            # 3. Stage 1 Binary Search
             low_cq = cq_min
             high_cq = cq_max
+            final_mid_cq = cq_min
+            final_vmaf = ceiling_score if ceiling_score is not None else 0.0
+            early_plateau_break = False
 
             for attempt in range(1, 16):
                 if self.stop_requested:
                     break
                 
-                # Plateau Detection: check if we have 3 CQs returning identical scores (within 0.05)
+                # Plateau Detection: check if we have 3 probed CQs with VMAF within 0.05 tolerance
                 if len(local_probes) >= 3:
                     sorted_probes = sorted(local_probes.items(), key=lambda x: x[1], reverse=True)
+                    plateau_detected = False
                     for i in range(len(sorted_probes) - 2):
                         p1, p2, p3 = sorted_probes[i], sorted_probes[i+1], sorted_probes[i+2]
                         if abs(p1[1] - p3[1]) <= 0.05:
-                            # We found a plateau!
                             plateau_cq = max(p1[0], p2[0], p3[0])
-                            if plateau_cq > low_cq:
-                                self.log(f"[PROBE] Plateau detected at CQ {p3[0]}, {p2[0]}, {p1[0]} (Scores: {p3[1]:.2f}, {p2[1]:.2f}, {p1[1]:.2f}). Narrowing search from below to CQ {plateau_cq}.")
-                                low_cq = plateau_cq
+                            self.log(f"[PROBE] Plateau detected at CQ {p3[0]}, {p2[0]}, {p1[0]} (Scores: {p3[1]:.2f}, {p2[1]:.2f}, {p1[1]:.2f}). Stopping first search phase early.")
+                            final_mid_cq = plateau_cq
+                            final_vmaf = local_probes[plateau_cq]
+                            plateau_detected = True
+                            early_plateau_break = True
+                            break
+                    if plateau_detected:
+                        break
                 
                 # Stop if there are no more integer points between low and high
                 if high_cq - low_cq <= 1:
@@ -362,6 +373,8 @@ class VideoOptimizerEngine:
                     break
                 
                 update_best(mid_cq, score)
+                final_mid_cq = mid_cq
+                final_vmaf = score
                 
                 if score >= effective_target:
                     # Quality is enough/high, try to compress more (higher CQ value)
@@ -369,28 +382,73 @@ class VideoOptimizerEngine:
                 else:
                     # Quality is too low, we must use higher quality (lower CQ value)
                     high_cq = mid_cq
-                    
-            # 4. Final selection: find the best probed CQ
+
+            # 4. Stage 2 Refinement Binary Search (Directional Search)
+            self.log(f"[PROBE] Stage 1 finished. Final midpoint CQ {final_mid_cq} has VMAF {final_vmaf:.2f}.")
+            
+            if final_vmaf >= effective_target:
+                # Case A: Quality is sufficient. Search to the right (higher CQs / more compression)
+                # Find tested similar_cq in local_probes that is > final_mid_cq and closest to effective_target
+                candidates = [k for k in local_probes.keys() if k > final_mid_cq]
+                if candidates:
+                    similar_cq = min(candidates, key=lambda k: abs(local_probes[k] - effective_target))
+                else:
+                    similar_cq = cq_max
+                self.log(f"[PROBE] VMAF >= target. Refining search to the right (higher CQs) between {final_mid_cq} and {similar_cq}...")
+            else:
+                # Case B: Quality is too low. Search to the left (lower CQs / higher quality)
+                # Find tested similar_cq in local_probes that is < final_mid_cq and closest to effective_target
+                candidates = [k for k in local_probes.keys() if k < final_mid_cq]
+                if candidates:
+                    similar_cq = min(candidates, key=lambda k: abs(local_probes[k] - effective_target))
+                else:
+                    similar_cq = cq_min
+                self.log(f"[PROBE] VMAF < target. Refining search to the left (lower CQs) between {similar_cq} and {final_mid_cq}...")
+
+            refine_low = min(final_mid_cq, similar_cq)
+            refine_high = max(final_mid_cq, similar_cq)
+
+            # Run second binary search
+            for attempt_ref in range(1, 10):
+                if self.stop_requested:
+                    break
+                if refine_high - refine_low <= 1:
+                    break
+
+                mid_cq = (refine_low + refine_high) // 2
+                score = probe_cq(mid_cq, f"Refinement Pass {attempt_ref}: ")
+                if score is None:
+                    break
+
+                update_best(mid_cq, score)
+
+                if score >= effective_target:
+                    refine_low = mid_cq
+                else:
+                    refine_high = mid_cq
+
+            # 5. Final Selection: choose the highest CQ meeting quality, fallback to closest overall
             if local_probes:
                 valid_cqs = []
                 for c_cq, c_score in local_probes.items():
-                    if target_unreachable:
-                        if ceiling_score is not None and c_score >= ceiling_score - 0.15:
-                            valid_cqs.append((c_cq, c_score))
-                    else:
-                        if c_score >= target_vmaf:
-                            valid_cqs.append((c_cq, c_score))
+                    if c_score >= effective_target - 0.05:
+                        valid_cqs.append((c_cq, c_score))
                 if valid_cqs:
-                    # Choose the highest CQ (maximum compression)
                     best_cq, best_score = max(valid_cqs, key=lambda x: x[0])
                     self.log(f"[PROBE] Final evaluation: optimal CQ is {best_cq} with VMAF {best_score:.2f}")
                 else:
-                    # Fallback to closest overall in history
                     closest_cq = min(local_probes.keys(), key=lambda x: abs(local_probes[x] - target_vmaf))
                     best_cq = closest_cq
                     best_score = local_probes[closest_cq]
                     self.log(f"[PROBE] Final evaluation: fallback to closest CQ {best_cq} with VMAF {best_score:.2f}")
 
+            return best_cq, best_score, max_score, max_score_cq
+
+        except Exception as e:
+            self.log(f"[CRITICAL] Unexpected error in VMAF search: {e}")
+            import traceback
+            self.log(traceback.format_exc())
+            return 26, 0.0, 0.0, 26
         finally:
             for sample_src in ref_samples:
                 try:

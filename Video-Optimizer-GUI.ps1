@@ -542,135 +542,195 @@ $btnStart.Add_Click({
                                      return $avg
                                  }
 
-                                   # --- Boundary-Bounded Binary Search ---
-                                   $cqMin = 1
-                                   $cqMax = 51
-                                   
-                                   $bestCQ = $cqMin
-                                   $bestScore = 0
-                                   $maxScore = 0
-                                   $maxScoreCq = $cqMin
-                                   $skipSearch = $false
-                                   
-                                   $effectiveTarget = $target
-                                   $targetUnreachable = $false
+                                    # --- Boundary-Bounded Binary Search ---
+                                    $cqMin = 1
+                                    $cqMax = 51
+                                    
+                                    $bestCQ = $cqMin
+                                    $bestScore = 0
+                                    $maxScore = 0
+                                    $maxScoreCq = $cqMin
+                                    $skipSearch = $false
+                                    
+                                    $effectiveTarget = $target
+                                    $targetUnreachable = $false
 
-                                   # 1. Probe floor extreme (cqMax, lowest quality) first
-                                   Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." }
-                                   $floorScore = & $probeSingleCq $cqMax "Boundary Floor: "
-                                   if ($null -ne $floorScore) {
-                                       if ($floorScore -gt $maxScore) { $maxScore = $floorScore; $maxScoreCq = $cqMax }
-                                       $bestCQ = $cqMax
-                                       $bestScore = $floorScore
-                                       # If floor score meets or exceeds target, immediate exit with max compression
-                                       if ($floorScore -ge $target) {
-                                           Write-Output @{ Type="Log"; Msg="[PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore, 2)) >= $target). Max compression achieved." }
-                                           $skipSearch = $true
-                                       }
-                                   }
+                                    # 1. Probe floor extreme (cqMax, lowest quality) first
+                                    Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." }
+                                    $floorScore = & $probeSingleCq $cqMax "Boundary Floor: "
+                                    if ($null -ne $floorScore -and $floorScore -gt 0) {
+                                        if ($floorScore -gt $maxScore) { $maxScore = $floorScore; $maxScoreCq = $cqMax }
+                                        $bestCQ = $cqMax
+                                        $bestScore = $floorScore
+                                        # If floor score meets or exceeds target, immediate exit with max compression
+                                        if ($floorScore -ge $target) {
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore, 2)) >= $target). Max compression achieved." }
+                                            $skipSearch = $true
+                                        }
+                                    }
 
-                                   if ($stopSignal[0]) { $skipSearch = $true }
+                                    if ($stopSignal[0]) { $skipSearch = $true }
 
-                                   # 2. Probe ceiling extreme (cqMin, highest quality) second
-                                   if (-not $skipSearch) {
-                                       Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." }
-                                       $ceilingScore = & $probeSingleCq $cqMin "Boundary Ceiling: "
-                                       if ($null -ne $ceilingScore) {
-                                           if ($ceilingScore -gt $maxScore) { $maxScore = $ceilingScore; $maxScoreCq = $cqMin }
-                                           $bestCQ = $cqMin
-                                           $bestScore = $ceilingScore
-                                           # If ceiling score cannot reach target, adjust effective target
-                                           if ($ceilingScore -lt $target) {
-                                               $targetUnreachable = $true
-                                               $toleranceVal = $ceilingScore - 0.15
-                                               $floorVal = if ($null -ne $floorScore) { $floorScore } else { 0.0 }
-                                               $effectiveTarget = [math]::max($floorVal, $toleranceVal)
-                                               Write-Output @{ Type="Log"; Msg="[PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $target). Adjusting effective VMAF target to $([math]::Round($effectiveTarget, 2)) and continuing search." }
-                                           }
-                                       }
-                                   }
+                                    # 2. Probe ceiling extreme (cqMin, highest quality) second
+                                    if (-not $skipSearch) {
+                                        Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." }
+                                        $ceilingScore = & $probeSingleCq $cqMin "Boundary Ceiling: "
+                                        if ($null -ne $ceilingScore -and $ceilingScore -gt 0) {
+                                            if ($ceilingScore -gt $maxScore) { $maxScore = $ceilingScore; $maxScoreCq = $cqMin }
+                                            $bestCQ = $cqMin
+                                            $bestScore = $ceilingScore
+                                            # If ceiling score cannot reach target, adjust effective target
+                                            if ($ceilingScore -lt $target) {
+                                                $targetUnreachable = $true
+                                                $effectiveTarget = $ceilingScore
+                                                Write-Output @{ Type="Log"; Msg="[PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $target). Adjusting effective VMAF target to known ceiling $([math]::Round($effectiveTarget, 2)) and continuing search." }
+                                            }
+                                        }
+                                    }
 
-                                   if ($stopSignal[0]) { $skipSearch = $true }
+                                    if ($stopSignal[0]) { $skipSearch = $true }
 
-                                   # 3. Perform binary search targeting effective target
-                                   if (-not $skipSearch) {
-                                       $lowCq = $cqMin
-                                       $highCq = $cqMax
-                                       
-                                       for ($attempt = 1; $attempt -le 15; $attempt++) {
-                                           if ($stopSignal[0]) { break }
-                                           
-                                           # Plateau Detection: check if we have 3 CQs returning identical scores (within 0.05)
-                                           if ($localProbes.Count -ge 3) {
-                                               $sortedKeys = $localProbes.Keys | Sort-Object { $localProbes[$_] } -Descending
-                                               for ($i = 0; $i -lt ($sortedKeys.Count - 2); $i++) {
-                                                   $k1 = $sortedKeys[$i]
-                                                   $k2 = $sortedKeys[$i+1]
-                                                   $k3 = $sortedKeys[$i+2]
-                                                   if ([math]::Abs($localProbes[$k1] - $localProbes[$k3]) -le 0.05) {
-                                                       # We found a plateau!
-                                                       $plateauCq = [math]::max($k1, [math]::max($k2, $k3))
-                                                       if ($plateauCq -gt $lowCq) {
-                                                           Write-Output @{ Type="Log"; Msg="[PROBE] Plateau detected at CQ $k3, $k2, $k1 (Scores: $([math]::Round($localProbes[$k3], 2)), $([math]::Round($localProbes[$k2], 2)), $([math]::Round($localProbes[$k1], 2))). Narrowing search from below to CQ $plateauCq." }
-                                                           $lowCq = $plateauCq
-                                                       }
-                                                   }
-                                               }
-                                           }
-                                           
-                                           if (($highCq - $lowCq) -le 1) { break }
-                                           
-                                           $midCq = [math]::Floor(($lowCq + $highCq) / 2)
-                                           
-                                           $score = & $probeSingleCq $midCq "Pass $attempt : "
-                                           if ($score -eq $null) { break }
-                                           
-                                           if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
-                                           if ($bestScore -eq 0 -or [math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) {
-                                               $bestCQ = $midCq
-                                               $bestScore = $score
-                                           }
-                                           Write-Output @{ Type="VmafUpdate"; Score=$score }
-                                           
-                                           if ($score -ge $effectiveTarget) {
-                                               # Quality is enough/high, try to compress more (higher CQ value)
-                                               $lowCq = $midCq
-                                           } else {
-                                               # Quality too low, move toward lower CQ (higher quality)
-                                               $highCq = $midCq
-                                           }
-                                       }
-                                   }
-                                   
-                                   # 4. Final selection: find the best probed CQ
-                                   if ($localProbes.Count -gt 0) {
-                                       $validCqs = @()
-                                       foreach ($c_cq in $localProbes.Keys) {
-                                           $c_score = $localProbes[$c_cq]
-                                           if ($targetUnreachable) {
-                                               if ($null -ne $ceilingScore -and $c_score -ge ($ceilingScore - 0.15)) {
-                                                   $validCqs += ,@($c_cq, $c_score)
-                                               }
-                                           } else {
-                                               if ($c_score -ge $target) {
-                                                   $validCqs += ,@($c_cq, $c_score)
-                                               }
-                                           }
-                                       }
-                                       if ($validCqs.Count -gt 0) {
-                                           # Choose the highest CQ (maximum compression)
-                                           $bestPair = $validCqs | Sort-Object { $_[0] } -Descending | Select-Object -First 1
-                                           $bestCQ = $bestPair[0]
-                                           $bestScore = $bestPair[1]
-                                           Write-Output @{ Type="Log"; Msg="[PROBE] Final evaluation: optimal CQ is $bestCQ with VMAF $([math]::Round($bestScore, 2))" }
-                                       } else {
-                                           # Fallback to closest overall in history
-                                           $closestCq = $localProbes.Keys | Sort-Object { [math]::Abs($localProbes[$_] - $target) } | Select-Object -First 1
-                                           $bestCQ = $closestCq
-                                           $bestScore = $localProbes[$closestCq]
-                                           Write-Output @{ Type="Log"; Msg="[PROBE] Final evaluation: fallback to closest CQ $bestCQ with VMAF $([math]::Round($bestScore, 2))" }
-                                       }
-                                   }
+                                    # 3. Perform Stage 1 binary search targeting effective target
+                                    if (-not $skipSearch) {
+                                        $lowCq = $cqMin
+                                        $highCq = $cqMax
+                                        $finalMidCq = $cqMin
+                                        $finalVmaf = if ($null -ne $ceilingScore) { $ceilingScore } else { 0.0 }
+                                        $earlyPlateauBreak = $false
+                                        
+                                        for ($attempt = 1; $attempt -le 15; $attempt++) {
+                                            if ($stopSignal[0]) { break }
+                                            
+                                            # Plateau Detection: check if we have 3 probed CQs with VMAF within 0.05 tolerance
+                                            if ($localProbes.Count -ge 3) {
+                                                $sortedKeys = $localProbes.Keys | Sort-Object { $localProbes[$_] } -Descending
+                                                $plateauDetected = $false
+                                                for ($i = 0; $i -lt ($sortedKeys.Count - 2); $i++) {
+                                                    $k1 = $sortedKeys[$i]
+                                                    $k2 = $sortedKeys[$i+1]
+                                                    $k3 = $sortedKeys[$i+2]
+                                                    if ([math]::Abs($localProbes[$k1] - $localProbes[$k3]) -le 0.05) {
+                                                        $plateauCq = [math]::max($k1, [math]::max($k2, $k3))
+                                                        Write-Output @{ Type="Log"; Msg="[PROBE] Plateau detected at CQ $k3, $k2, $k1 (Scores: $([math]::Round($localProbes[$k3], 2)), $([math]::Round($localProbes[$k2], 2)), $([math]::Round($localProbes[$k1], 2))). Stopping first search phase early." }
+                                                        $finalMidCq = $plateauCq
+                                                        $finalVmaf = $localProbes[$plateauCq]
+                                                        $plateauDetected = $true
+                                                        $earlyPlateauBreak = $true
+                                                        break
+                                                    }
+                                                }
+                                                if ($plateauDetected) { break }
+                                            }
+                                            
+                                            if (($highCq - $lowCq) -le 1) { break }
+                                            
+                                            $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+                                            
+                                            $score = & $probeSingleCq $midCq "Pass $attempt : "
+                                            if ($score -eq $null) { break }
+                                            
+                                            if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
+                                            if ($bestScore -eq 0 -or [math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) {
+                                                $bestCQ = $midCq
+                                                $bestScore = $score
+                                            }
+                                            $finalMidCq = $midCq
+                                            $finalVmaf = $score
+                                            Write-Output @{ Type="VmafUpdate"; Score=$score }
+                                            
+                                            if ($score -ge $effectiveTarget) {
+                                                # Quality is enough/high, try to compress more (higher CQ value)
+                                                $lowCq = $midCq
+                                            } else {
+                                                # Quality too low, move toward lower CQ (higher quality)
+                                                $highCq = $midCq
+                                            }
+                                        }
+
+                                        # 4. Stage 2 Refinement Binary Search (Directional Search)
+                                        Write-Output @{ Type="Log"; Msg="[PROBE] Stage 1 finished. Final midpoint CQ $finalMidCq has VMAF $([math]::Round($finalVmaf, 2))." }
+                                        
+                                        $similarCq = $finalMidCq
+                                        if ($finalVmaf -ge $effectiveTarget) {
+                                            # Case A: Quality is sufficient. Search to the right (higher CQs / more compression)
+                                            $candidates = @()
+                                            foreach ($k in $localProbes.Keys) {
+                                                if ($k -gt $finalMidCq) {
+                                                    $candidates += $k
+                                                }
+                                            }
+                                            if ($candidates.Count -gt 0) {
+                                                $similarCq = $candidates | Sort-Object { [math]::Abs($localProbes[$_] - $effectiveTarget) } | Select-Object -First 1
+                                            } else {
+                                                $similarCq = $cqMax
+                                            }
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] VMAF >= target. Refining search to the right (higher CQs) between $finalMidCq and $similarCq..." }
+                                        } else {
+                                            # Case B: Quality is too low. Search to the left (lower CQs / higher quality)
+                                            $candidates = @()
+                                            foreach ($k in $localProbes.Keys) {
+                                                if ($k -lt $finalMidCq) {
+                                                    $candidates += $k
+                                                }
+                                            }
+                                            if ($candidates.Count -gt 0) {
+                                                $similarCq = $candidates | Sort-Object { [math]::Abs($localProbes[$_] - $effectiveTarget) } | Select-Object -First 1
+                                            } else {
+                                                $similarCq = $cqMin
+                                            }
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] VMAF < target. Refining search to the left (lower CQs) between $similarCq and $finalMidCq..." }
+                                        }
+
+                                        $refineLow = [math]::min($finalMidCq, $similarCq)
+                                        $refineHigh = [math]::max($finalMidCq, $similarCq)
+
+                                        # Run second binary search
+                                        for ($attemptRef = 1; $attemptRef -le 9; $attemptRef++) {
+                                            if ($stopSignal[0]) { break }
+                                            if (($refineHigh - $refineLow) -le 1) { break }
+                                            
+                                            $midCq = [math]::Floor(($refineLow + $refineHigh) / 2)
+                                            $score = & $probeSingleCq $midCq "Refinement Pass $attemptRef : "
+                                            if ($score -eq $null) { break }
+                                            
+                                            if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
+                                            if ($bestScore -eq 0 -or [math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) {
+                                                $bestCQ = $midCq
+                                                $bestScore = $score
+                                            }
+                                            Write-Output @{ Type="VmafUpdate"; Score=$score }
+                                            
+                                            if ($score -ge $effectiveTarget) {
+                                                $refineLow = $midCq
+                                            } else {
+                                                $refineHigh = $midCq
+                                            }
+                                        }
+                                    }
+
+                                    # 5. Final selection: choose the best optimal CQ from all tested CQs
+                                    if ($localProbes.Count -gt 0) {
+                                        $validCqs = @()
+                                        foreach ($c_cq in $localProbes.Keys) {
+                                            $c_score = $localProbes[$c_cq]
+                                            if ($c_score -ge ($effectiveTarget - 0.05)) {
+                                                $validCqs += ,@($c_cq, $c_score)
+                                            }
+                                        }
+                                        if ($validCqs.Count -gt 0) {
+                                            # Choose the highest CQ (maximum compression)
+                                            $bestPair = $validCqs | Sort-Object { $_[0] } -Descending | Select-Object -First 1
+                                            $bestCQ = $bestPair[0]
+                                            $bestScore = $bestPair[1]
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] Final evaluation: optimal CQ is $bestCQ with VMAF $([math]::Round($bestScore, 2))" }
+                                        } else {
+                                            # Fallback to closest overall in history
+                                            $closestCq = $localProbes.Keys | Sort-Object { [math]::Abs($localProbes[$_] - $target) } | Select-Object -First 1
+                                            $bestCQ = $closestCq
+                                            $bestScore = $localProbes[$closestCq]
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] Final evaluation: fallback to closest CQ $bestCQ with VMAF $([math]::Round($bestScore, 2))" }
+                                        }
+                                    }
                             } finally {
                                 foreach ($sampleSrc in $refSamples) {
                                     if (Test-Path $sampleSrc) { Remove-Item $sampleSrc -Force }
