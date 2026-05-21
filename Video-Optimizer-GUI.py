@@ -223,6 +223,10 @@ class VideoOptimizerEngine:
             best_score = 0
             max_score = 0
             max_score_cq = 26
+            local_probes = {}
+            if probe_cache is not None and 'Probes' in probe_cache:
+                for k, v in probe_cache['Probes'].items():
+                    local_probes[int(k)] = v
 
             # --- Local helper: probe a single CQ value ---
             def probe_cq(cq_val, pass_label=""):
@@ -235,6 +239,7 @@ class VideoOptimizerEngine:
                 if probe_cache is not None and str_cq in probe_cache['Probes']:
                     cached_score = probe_cache['Probes'][str_cq]
                     self.log(f"[PROBE] {pass_label}Cached CQ {cq_val} -> VMAF: {cached_score:.2f}")
+                    local_probes[cq_val] = cached_score
                     return cached_score
                 
                 self.log(f"[PROBE] {pass_label}Probing Visual Fidelity at CQ {cq_val}")
@@ -262,6 +267,7 @@ class VideoOptimizerEngine:
                 self.log(f"[PROBE] {pass_label}CQ {cq_val} -> VMAF: {avg:.2f}")
                 
                 # Update probe cache
+                local_probes[cq_val] = avg
                 if probe_cache is not None:
                     probe_cache['Probes'][str_cq] = avg
                     if avg > probe_cache.get('MaxAchievableVmaf', 0):
@@ -309,12 +315,18 @@ class VideoOptimizerEngine:
             # 2. Check CQ/CRF cq_min (ceiling) and record/remember output data
             self.log(f"[PROBE] Boundary: Testing VMAF ceiling at CQ {cq_min}...")
             ceiling_score = probe_cq(cq_min, "Boundary Ceiling: ")
+            
+            effective_target = target_vmaf
+            target_unreachable = False
+            
             if ceiling_score is not None:
                 update_best(cq_min, ceiling_score)
                 # If even the highest quality cannot reach target VMAF
                 if ceiling_score < target_vmaf:
-                    self.log(f"[PROBE] Ceiling CQ {cq_min} cannot reach target ({ceiling_score:.2f} < {target_vmaf}). Returning best achievable.")
-                    return cq_min, ceiling_score, max_score, max_score_cq
+                    target_unreachable = True
+                    # Dynamically adjust the target to ceiling - 0.15
+                    effective_target = max(floor_score if floor_score is not None else 0.0, ceiling_score - 0.15)
+                    self.log(f"[PROBE] Ceiling CQ {cq_min} cannot reach target ({ceiling_score:.2f} < {target_vmaf}). Adjusting effective VMAF target to {effective_target:.2f} and continuing search.")
 
             if self.stop_requested:
                 return best_cq, best_score, max_score, max_score_cq
@@ -326,6 +338,18 @@ class VideoOptimizerEngine:
             for attempt in range(1, 16):
                 if self.stop_requested:
                     break
+                
+                # Plateau Detection: check if we have 3 CQs returning identical scores (within 0.05)
+                if len(local_probes) >= 3:
+                    sorted_probes = sorted(local_probes.items(), key=lambda x: x[1], reverse=True)
+                    for i in range(len(sorted_probes) - 2):
+                        p1, p2, p3 = sorted_probes[i], sorted_probes[i+1], sorted_probes[i+2]
+                        if abs(p1[1] - p3[1]) <= 0.05:
+                            # We found a plateau!
+                            plateau_cq = max(p1[0], p2[0], p3[0])
+                            if plateau_cq > low_cq:
+                                self.log(f"[PROBE] Plateau detected at CQ {p3[0]}, {p2[0]}, {p1[0]} (Scores: {p3[1]:.2f}, {p2[1]:.2f}, {p1[1]:.2f}). Narrowing search from below to CQ {plateau_cq}.")
+                                low_cq = plateau_cq
                 
                 # Stop if there are no more integer points between low and high
                 if high_cq - low_cq <= 1:
@@ -339,17 +363,33 @@ class VideoOptimizerEngine:
                 
                 update_best(mid_cq, score)
                 
-                if abs(score - target_vmaf) <= 0.5:
-                    break
-                
-                if score > target_vmaf:
-                    # Quality too high, move toward higher CQ (lower quality)
+                if score >= effective_target:
+                    # Quality is enough/high, try to compress more (higher CQ value)
                     low_cq = mid_cq
                 else:
-                    # Quality too low, move toward lower CQ (higher quality)
+                    # Quality is too low, we must use higher quality (lower CQ value)
                     high_cq = mid_cq
                     
-            return best_cq, best_score, max_score, max_score_cq
+            # 4. Final selection: find the best probed CQ
+            if local_probes:
+                valid_cqs = []
+                for c_cq, c_score in local_probes.items():
+                    if target_unreachable:
+                        if ceiling_score is not None and c_score >= ceiling_score - 0.15:
+                            valid_cqs.append((c_cq, c_score))
+                    else:
+                        if c_score >= target_vmaf:
+                            valid_cqs.append((c_cq, c_score))
+                if valid_cqs:
+                    # Choose the highest CQ (maximum compression)
+                    best_cq, best_score = max(valid_cqs, key=lambda x: x[0])
+                    self.log(f"[PROBE] Final evaluation: optimal CQ is {best_cq} with VMAF {best_score:.2f}")
+                else:
+                    # Fallback to closest overall in history
+                    closest_cq = min(local_probes.keys(), key=lambda x: abs(local_probes[x] - target_vmaf))
+                    best_cq = closest_cq
+                    best_score = local_probes[closest_cq]
+                    self.log(f"[PROBE] Final evaluation: fallback to closest CQ {best_cq} with VMAF {best_score:.2f}")
 
         finally:
             for sample_src in ref_samples:
