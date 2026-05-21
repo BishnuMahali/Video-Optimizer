@@ -223,93 +223,132 @@ class VideoOptimizerEngine:
             best_score = 0
             max_score = 0
             max_score_cq = 26
-            current_step = 4
-            last_dir = 0
-            current_cq = 26
+
+            # --- Local helper: probe a single CQ value ---
+            def probe_cq(cq_val, pass_label=""):
+                """Probe VMAF at a given CQ. Returns avg score or None."""
+                if self.stop_requested:
+                    return None
+                str_cq = str(cq_val)
+                
+                # Check probe cache first
+                if probe_cache is not None and str_cq in probe_cache['Probes']:
+                    cached_score = probe_cache['Probes'][str_cq]
+                    self.log(f"[PROBE] {pass_label}Cached CQ {cq_val} -> VMAF: {cached_score:.2f}")
+                    return cached_score
+                
+                self.log(f"[PROBE] {pass_label}Probing Visual Fidelity at CQ {cq_val}")
+                scores = []
+                for idx, sample_src in enumerate(ref_samples):
+                    if self.stop_requested:
+                        break
+                    sample_enc = temp_dir / f"v_e_{idx}_{uid}.mkv"
+                    try:
+                        encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(cq_val), str(sample_enc)]
+                        subprocess.run(encode_args, check=True)
+                        if self.stop_requested: break
+                        score = self.calculate_vmaf(sample_src, sample_enc)
+                        if score is not None:
+                            scores.append(score)
+                    except Exception as e:
+                        self.log(f"[FAIL] Sample processing failed: {e}")
+                    finally:
+                        if sample_enc.exists(): sample_enc.unlink()
+                
+                if not scores or self.stop_requested:
+                    return None
+                
+                avg = sum(scores) / len(scores)
+                self.log(f"[PROBE] {pass_label}CQ {cq_val} -> VMAF: {avg:.2f}")
+                
+                # Update probe cache
+                if probe_cache is not None:
+                    probe_cache['Probes'][str_cq] = avg
+                    if avg > probe_cache.get('MaxAchievableVmaf', 0):
+                        probe_cache['MaxAchievableVmaf'] = avg
+                        probe_cache['MaxVmafCq'] = cq_val
+                    try:
+                        with open(config['CacheFile'], 'w') as f:
+                            json.dump(list(config['Cache'].values()), f, indent=4)
+                    except:
+                        pass
+                return avg
+
+            # --- Helper: update best tracking ---
+            def update_best(cq_val, score_val):
+                nonlocal best_cq, best_score, max_score, max_score_cq
+                if score_val > max_score:
+                    max_score = score_val
+                    max_score_cq = cq_val
+                if abs(score_val - target_vmaf) < abs(best_score - target_vmaf):
+                    best_cq = cq_val
+                    best_score = score_val
+
+            # --- Phase 1: Boundary Probing ---
+            # Probe the extreme CQs to establish VMAF floor & ceiling instantly
+            cq_min = config.get('CqMin', 1)
+            cq_max = config.get('CqMax', 51)
+            
+            # Probe high CQ (lowest quality = VMAF floor)
+            self.log(f"[PROBE] Boundary: Testing VMAF floor at CQ {cq_max}...")
+            floor_score = probe_cq(cq_max, "Boundary Floor: ")
+            if floor_score is not None:
+                update_best(cq_max, floor_score)
+                if abs(floor_score - target_vmaf) <= 0.5:
+                    return best_cq, best_score, max_score, max_score_cq
+                if floor_score >= target_vmaf:
+                    # Even worst quality exceeds target — use it directly (maximum compression)
+                    self.log(f"[PROBE] Floor CQ {cq_max} already meets target ({floor_score:.2f} >= {target_vmaf}). Max compression achieved.")
+                    return best_cq, best_score, max_score, max_score_cq
+
+            if self.stop_requested:
+                return best_cq, best_score, max_score, max_score_cq
+
+            # Probe low CQ (highest quality = VMAF ceiling)
+            self.log(f"[PROBE] Boundary: Testing VMAF ceiling at CQ {cq_min}...")
+            ceiling_score = probe_cq(cq_min, "Boundary Ceiling: ")
+            if ceiling_score is not None:
+                update_best(cq_min, ceiling_score)
+                if abs(ceiling_score - target_vmaf) <= 0.5:
+                    return best_cq, best_score, max_score, max_score_cq
+                if ceiling_score < target_vmaf:
+                    # Even best quality can't reach target — return best achievable
+                    self.log(f"[PROBE] Ceiling CQ {cq_min} can't reach target ({ceiling_score:.2f} < {target_vmaf}). Returning best achievable.")
+                    return best_cq, best_score, max_score, max_score_cq
+
+            if self.stop_requested:
+                return best_cq, best_score, max_score, max_score_cq
+
+            # --- Phase 2: Binary Search between bounds ---
+            # Narrow the search range based on boundary probes
+            low_cq = cq_min   # high quality end
+            high_cq = cq_max  # low quality end
+            current_step = 2   # default step size reduced from 4 to 2
 
             for attempt in range(1, 16):
                 if self.stop_requested:
                     break
                 
-                str_cq = str(current_cq)
-                scores = []
-                is_cached = False
-                
-                if probe_cache is not None and str_cq in probe_cache['Probes']:
-                    avg_score = probe_cache['Probes'][str_cq]
-                    self.log(f"[PROBE] Pass {attempt}: Cached CQ {current_cq} -> VMAF: {avg_score:.2f}")
-                    scores = [avg_score]
-                    is_cached = True
-                else:
-                    self.log(f"[PROBE] Pass {attempt}: Probing Visual Fidelity at CQ {current_cq}")
-                    
-                    for idx, sample_src in enumerate(ref_samples):
-                        if self.stop_requested:
-                            break
-                        
-                        sample_enc = temp_dir / f"v_e_{idx}_{uid}.mkv"
-                        
-                        try:
-                            encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(current_cq), str(sample_enc)]
-                            subprocess.run(encode_args, check=True)
-                            
-                            if self.stop_requested: break
-                            
-                            score = self.calculate_vmaf(sample_src, sample_enc)
-                            if score is not None:
-                                scores.append(score)
-                                
-                        except Exception as e:
-                            self.log(f"[FAIL] Sample processing failed: {e}")
-                        finally:
-                            if sample_enc.exists(): sample_enc.unlink()
-                    
-                    if scores and probe_cache is not None and not self.stop_requested:
-                        avg_score = sum(scores) / len(scores)
-                        probe_cache['Probes'][str_cq] = avg_score
-                        if avg_score > probe_cache['MaxAchievableVmaf']:
-                            probe_cache['MaxAchievableVmaf'] = avg_score
-                            probe_cache['MaxVmafCq'] = current_cq
-                        
-                        try:
-                            with open(config['CacheFile'], 'w') as f:
-                                json.dump(list(config['Cache'].values()), f, indent=4)
-                        except:
-                            pass
-                
-                if self.stop_requested: break
-                
-                if scores:
-                    avg_score = sum(scores) / len(scores)
-                    if not is_cached:
-                        self.log(f"[PROBE] Pass {attempt}: CQ {current_cq} -> VMAF: {avg_score:.2f}")
-                    
-                    if avg_score > max_score:
-                        max_score = avg_score
-                        max_score_cq = current_cq
-                    
-                    if abs(avg_score - target_vmaf) < abs(best_score - target_vmaf):
-                        best_cq = current_cq
-                        best_score = avg_score
-                    
-                    if abs(avg_score - target_vmaf) <= 0.5:
-                        break
-                    
-                    direction = 1 if avg_score > target_vmaf else -1
-                    
-                    if last_dir != 0 and direction != last_dir:
-                        if current_step > 1:
-                            current_step //= 2
-                        else:
-                            break
-                    
-                    last_dir = direction
-                    current_cq += (direction * current_step)
-                    
-                    if current_cq < 0 or current_cq > 51:
-                        break
-                else:
+                if high_cq - low_cq <= 1:
                     break
+                
+                mid_cq = (low_cq + high_cq) // 2
+                
+                score = probe_cq(mid_cq, f"Pass {attempt}: ")
+                if score is None:
+                    break
+                
+                update_best(mid_cq, score)
+                
+                if abs(score - target_vmaf) <= 0.5:
+                    break
+                
+                if score > target_vmaf:
+                    # Quality too high, move toward higher CQ (lower quality)
+                    low_cq = mid_cq
+                else:
+                    # Quality too low, move toward lower CQ (higher quality)
+                    high_cq = mid_cq
                     
             return best_cq, best_score, max_score, max_score_cq
 
@@ -419,6 +458,9 @@ class VideoOptimizerEngine:
         else:
             parts = target_audio_opt.split(' ')
             target_audio_args = ['-c:a', parts[0], '-b:a', parts[1]]
+
+        # 5. Get duration for progress tracking during encode
+        duration = self.get_video_duration(file_path)
 
         # 5. Core Processing Loop
         if config.get('VmafEnabled'):
@@ -1332,7 +1374,7 @@ class VideoOptimizerGUI(ctk.CTk):
                     res = self.engine.optimize_file(f, config, i, total)
                 except Exception as file_error:
                     self.add_log(f"[FAIL] Unexpected error processing {f['Name']}: {file_error}")
-                    res = {'Success': False, 'Msg': 'Failed (Error)'}
+                    res = {'Success': False, 'Msg': 'Failed (Error)', 'FinalVmaf': '---'}
                 
                 if res['Success']:
                     self.processed_count += 1
@@ -1351,8 +1393,8 @@ class VideoOptimizerGUI(ctk.CTk):
 
                 pct = (i + 1) / total
                 self.after(0, lambda p=pct: self.progress_bar.set(p))
-                if res.get('FinalVmaf') != '---':
-                    self.after(0, lambda v=res['FinalVmaf']: self.stat_vmaf.configure(text=v))
+                if res.get('FinalVmaf') and res.get('FinalVmaf') != '---':
+                    self.after(0, lambda v=res.get('FinalVmaf', '---'): self.stat_vmaf.configure(text=v))
         except Exception as e:
             self.add_log(f"[CRITICAL] Thread Error: {e}")
         finally:

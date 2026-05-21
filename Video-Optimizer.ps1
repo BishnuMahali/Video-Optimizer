@@ -105,7 +105,7 @@ $vmafMinCeiling = 85.0
 $vmafTarget = "93"
 $vmafMinCQ = 0
 $vmafMaxCQ = 51
-$vmafStep = 4
+$vmafStep = 2
 $vmafSampleDuration = 5
 $vmafSampleCount = 3
 $stepOptions = @(1, 2, 3, 4, 5, 6, 8)
@@ -361,7 +361,7 @@ $vmafEnabled = $true
 $vmafTarget = "93"
 $vmafMinCQ = 0
 $vmafMaxCQ = 51
-$vmafStep = 4
+$vmafStep = 2
 $vmafSampleDuration = 5
 $vmafSampleCount = 3
 $stepOptions = @(1, 2, 3, 4, 5, 6, 8)
@@ -490,15 +490,11 @@ function Find-OptimalCq {
         }
     }
 
-    $currentCQ = [math]::Round(($global:vmafMinCQ + $global:vmafMaxCQ) / 2)
-    $maxAttempts = 15
-    $currentStep = $global:vmafStep
-    $lastDirection = 0
-    $bestCQ = $currentCQ
+    $bestCQ = [math]::Round(($global:vmafMinCQ + $global:vmafMaxCQ) / 2)
     $bestDiff = 100
     $bestScore = 0
     $maxScore = 0
-    $maxScoreCQ = $currentCQ
+    $maxScoreCQ = $bestCQ
     
     $refSamples = New-Object System.Collections.Generic.List[string]
     $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
@@ -542,63 +538,107 @@ function Find-OptimalCq {
             return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 }
         }
 
-        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            $strCq = [string]$currentCQ
+        # --- Local helper: probe a single CQ value ---
+        function Invoke-CqProbe {
+            param([int]$CqVal, [string]$Label)
+            $strCq = [string]$CqVal
             
+            # Check probe cache first
             if ($null -ne $probeCache -and $probeCache.Probes.Contains($strCq)) {
-                $score = $probeCache.Probes[$strCq]
-                Write-Host "     Pass $($attempt) : Cached CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor Cyan
-            } else {
-                $score = Get-VmafScore -RefSamples $refSamples -Codec $Codec -CQ $currentCQ -Preset $Preset
-                Write-Host "     Pass $($attempt) : CQ=$currentCQ -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
+                $cachedScore = $probeCache.Probes[$strCq]
+                Write-Host "     ${Label}Cached CQ=$CqVal -> VMAF=$([math]::Round($cachedScore,2))" -ForegroundColor Cyan
+                return $cachedScore
+            }
+            
+            $score = Get-VmafScore -RefSamples $refSamples -Codec $Codec -CQ $CqVal -Preset $Preset
+            Write-Host "     ${Label}CQ=$CqVal -> VMAF=$([math]::Round($score,2))" -ForegroundColor DarkGray
+            
+            if ($null -ne $probeCache -and $score -gt 0) {
+                $probeCache.Probes[$strCq] = $score
+                if ($score -gt $probeCache.MaxAchievableVmaf) {
+                    $probeCache.MaxAchievableVmaf = $score
+                    $probeCache.MaxVmafCq = $CqVal
+                }
+                try {
+                    $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
+                } catch {}
+            }
+            return $score
+        }
+
+        # --- Helper: update best tracking ---
+        function Update-BestTracking {
+            param([int]$CqVal, [double]$ScoreVal)
+            if ($ScoreVal -gt $script:maxScore) {
+                $script:maxScore = $ScoreVal
+                $script:maxScoreCQ = $CqVal
+            }
+            $diff = [math]::Abs($ScoreVal - $TargetVmaf)
+            if ($diff -lt $script:bestDiff) {
+                $script:bestDiff = $diff
+                $script:bestCQ = $CqVal
+                $script:bestScore = $ScoreVal
+            }
+        }
+
+        # --- Phase 1: Boundary Probing ---
+        $cqMin = $global:vmafMinCQ
+        $cqMax = $global:vmafMaxCQ
+        $skipBinarySearch = $false
+        
+        # Probe high CQ (lowest quality = VMAF floor)
+        Write-Host "     [PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." -ForegroundColor Gray
+        $floorScore = Invoke-CqProbe -CqVal $cqMax -Label "Boundary Floor: "
+        if ($floorScore -gt 0) {
+            Update-BestTracking -CqVal $cqMax -ScoreVal $floorScore
+            if ([math]::Abs($floorScore - $TargetVmaf) -le 0.5) {
+                $skipBinarySearch = $true
+            } elseif ($floorScore -ge $TargetVmaf) {
+                Write-Host "     [PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore,2)) >= $TargetVmaf). Max compression achieved." -ForegroundColor Green
+                $skipBinarySearch = $true
+            }
+        }
+
+        if (-not $skipBinarySearch) {
+            # Probe low CQ (highest quality = VMAF ceiling)
+            Write-Host "     [PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." -ForegroundColor Gray
+            $ceilingScore = Invoke-CqProbe -CqVal $cqMin -Label "Boundary Ceiling: "
+            if ($ceilingScore -gt 0) {
+                Update-BestTracking -CqVal $cqMin -ScoreVal $ceilingScore
+                if ([math]::Abs($ceilingScore - $TargetVmaf) -le 0.5) {
+                    $skipBinarySearch = $true
+                } elseif ($ceilingScore -lt $TargetVmaf) {
+                    Write-Host "     [PROBE] Ceiling CQ $cqMin can't reach target ($([math]::Round($ceilingScore,2)) < $TargetVmaf). Returning best achievable." -ForegroundColor Yellow
+                    $skipBinarySearch = $true
+                }
+            }
+        }
+
+        if (-not $skipBinarySearch) {
+            # --- Phase 2: Binary Search between bounds ---
+            $lowCq = $cqMin
+            $highCq = $cqMax
+
+            for ($attempt = 1; $attempt -le 15; $attempt++) {
+                if (($highCq - $lowCq) -le 1) { break }
                 
-                if ($null -ne $probeCache -and $score -gt 0) {
-                    $probeCache.Probes[$strCq] = $score
-                    if ($score -gt $probeCache.MaxAchievableVmaf) {
-                        $probeCache.MaxAchievableVmaf = $score
-                        $probeCache.MaxVmafCq = $currentCQ
-                    }
-                    try {
-                        $FullCache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
-                    } catch {}
-                }
-            }
-            
-            if ($score -gt $maxScore) {
-                $maxScore = $score
-                $maxScoreCQ = $currentCQ
-            }
-
-            $diff = [math]::Abs($score - $TargetVmaf)
-            if ($diff -lt $bestDiff) {
-                $bestDiff = $diff
-                $bestCQ = $currentCQ
-                $bestScore = $score
-            }
-
-            # Tolerance of +/- 0.5 from target
-            if ($diff -le 0.5) {
-                break
-            }
-            
-            $direction = if ($score -gt $TargetVmaf) { 1 } else { -1 }
-
-            # Detect overshoot
-            if ($lastDirection -ne 0 -and $direction -ne $lastDirection) {
-                if ($currentStep -gt 1) {
-                    $currentStep = [int][math]::Max(1, [math]::Floor($currentStep / 2))
-                    Write-Host "       Overshoot detected. Reducing step to $currentStep" -ForegroundColor DarkGray
+                $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+                
+                $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
+                if ($score -le 0) { break }
+                
+                Update-BestTracking -CqVal $midCq -ScoreVal $score
+                
+                if ([math]::Abs($score - $TargetVmaf) -le 0.5) { break }
+                
+                if ($score -gt $TargetVmaf) {
+                    # Quality too high, move toward higher CQ
+                    $lowCq = $midCq
                 } else {
-                    Write-Host "       Maximum precision reached." -ForegroundColor DarkGray
-                    break
+                    # Quality too low, move toward lower CQ
+                    $highCq = $midCq
                 }
             }
-            
-            $lastDirection = $direction
-            $currentCQ += ($direction * $currentStep)
-
-            if ($currentCQ -lt $global:vmafMinCQ) { $currentCQ = $global:vmafMinCQ; break }
-            if ($currentCQ -gt $global:vmafMaxCQ) { $currentCQ = $global:vmafMaxCQ; break }
         }
     } finally {
         # Clean up ref sample segments

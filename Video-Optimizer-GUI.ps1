@@ -466,99 +466,134 @@ $btnStart.Add_Click({
                                 $bestScore = 0
                                 $maxScore = 0
                                 $maxScoreCq = 26
-                                $currentStep = 4
-                                $lastDir = 0
-                                $currentCQ = 26
                                 
                                 $cores = [System.Environment]::ProcessorCount
                                 $threads = [math]::max(1, [math]::min(4, [math]::floor($cores / 2)))
 
-                                for ($attempt = 1; $attempt -le 15; $attempt++) {
-                                    if ($stopSignal[0]) { break }
-                                    $strCq = [string]$currentCQ
-                                    $scores = @()
-                                    $isCached = $false
+                                # --- Local helper: probe a single CQ value ---
+                                $probeSingleCq = {
+                                    param([int]$cqVal, [string]$passLabel)
+                                    if ($stopSignal[0]) { return $null }
+                                    $strCq = [string]$cqVal
                                     
+                                    # Check probe cache first
                                     if ($probeCache -ne $null -and $probeCache.Probes.ContainsKey($strCq)) {
-                                        $avgScore = $probeCache.Probes[$strCq]
-                                        Write-Output @{ Type="Log"; Msg="[PROBE] Pass $attempt : Cached CQ $currentCQ -> VMAF: $([math]::Round($avgScore,2))" }
-                                        $scores = @($avgScore)
-                                        $isCached = $true
-                                    } else {
-                                        Write-Output @{ Type="Log"; Msg="[PROBE] Pass $attempt : Probing Visual Fidelity at CQ $currentCQ" }
-                                        for ($sIdx = 0; $sIdx -lt $refSamples.Count; $sIdx++) {
-                                            if ($stopSignal[0]) { break }
-                                            $sampleSrc = $refSamples[$sIdx]
-                                            $sampleEnc = Join-Path $config.TempDir "v_e_${sIdx}_${uid}.mkv"
-                                            
-                                            try {
-                                                $encodeArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-i", "$sampleSrc", "-c:v", "$($config.Encoder)", "-preset", "$($config.Preset)", "-$($config.Mode)", "$currentCQ", "$sampleEnc")
-                                                $p = Start-Process -FilePath "ffmpeg" -ArgumentList $encodeArgs -NoNewWindow -Wait -PassThru
-                                                if ($p.ExitCode -eq 0 -and (Test-Path $sampleEnc)) {
-                                                    $vmafArgs = @("-i", "$sampleEnc", "-i", "$sampleSrc", "-filter_complex", "libvmaf=n_threads=$threads", "-f", "null", "-")
-                                                    $process = New-Object System.Diagnostics.Process
-                                                    $process.StartInfo.FileName = "ffmpeg"
-                                                    $process.StartInfo.Arguments = ($vmafArgs -join " ")
-                                                    $process.StartInfo.UseShellExecute = $false
-                                                    $process.StartInfo.CreateNoWindow = $true
-                                                    $process.StartInfo.RedirectStandardError = $true
-                                                    $process.StartInfo.RedirectStandardOutput = $true
-                                                    $process.Start() | Out-Null
-                                                    $vmafOut = $process.StandardError.ReadToEnd()
-                                                    $process.WaitForExit()
-                                                    
-                                                    if ($vmafOut -match "VMAF score: (\d+\.\d+)") {
-                                                        $scores += [double]$matches[1]
-                                                    }
-                                                }
-                                            } finally {
-                                                if (Test-Path $sampleEnc) { Remove-Item $sampleEnc -Force }
-                                            }
-                                        }
+                                        $cachedScore = $probeCache.Probes[$strCq]
+                                        Write-Output @{ Type="Log"; Msg="[PROBE] ${passLabel}Cached CQ $cqVal -> VMAF: $([math]::Round($cachedScore,2))" }
+                                        return $cachedScore
+                                    }
+                                    
+                                    Write-Output @{ Type="Log"; Msg="[PROBE] ${passLabel}Probing Visual Fidelity at CQ $cqVal" }
+                                    $scores = @()
+                                    for ($sIdx = 0; $sIdx -lt $refSamples.Count; $sIdx++) {
+                                        if ($stopSignal[0]) { break }
+                                        $sampleSrc = $refSamples[$sIdx]
+                                        $sampleEnc = Join-Path $config.TempDir "v_e_${sIdx}_${uid}.mkv"
                                         
-                                        if ($scores.Count -gt 0 -and $probeCache -ne $null -and !$stopSignal[0]) {
-                                            $avgScore = ($scores | Measure-Object -Average).Average
-                                            $probeCache.Probes[$strCq] = $avgScore
-                                            if ($avgScore -gt $probeCache.MaxAchievableVmaf) {
-                                                $probeCache.MaxAchievableVmaf = $avgScore
-                                                $probeCache.MaxVmafCq = $currentCQ
+                                        try {
+                                            $encodeArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-i", "$sampleSrc", "-c:v", "$($config.Encoder)", "-preset", "$($config.Preset)", "-$($config.Mode)", "$cqVal", "$sampleEnc")
+                                            $p = Start-Process -FilePath "ffmpeg" -ArgumentList $encodeArgs -NoNewWindow -Wait -PassThru
+                                            if ($p.ExitCode -eq 0 -and (Test-Path $sampleEnc)) {
+                                                $vmafArgs = @("-i", "$sampleEnc", "-i", "$sampleSrc", "-filter_complex", "libvmaf=n_threads=$threads", "-f", "null", "-")
+                                                $process = New-Object System.Diagnostics.Process
+                                                $process.StartInfo.FileName = "ffmpeg"
+                                                $process.StartInfo.Arguments = ($vmafArgs -join " ")
+                                                $process.StartInfo.UseShellExecute = $false
+                                                $process.StartInfo.CreateNoWindow = $true
+                                                $process.StartInfo.RedirectStandardError = $true
+                                                $process.StartInfo.RedirectStandardOutput = $true
+                                                $process.Start() | Out-Null
+                                                $vmafOut = $process.StandardError.ReadToEnd()
+                                                $process.WaitForExit()
+                                                
+                                                if ($vmafOut -match "VMAF score: (\d+\.\d+)") {
+                                                    $scores += [double]$matches[1]
+                                                }
                                             }
-                                            
-                                            try {
-                                                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile
-                                            } catch {}
+                                        } finally {
+                                            if (Test-Path $sampleEnc) { Remove-Item $sampleEnc -Force }
                                         }
                                     }
                                     
-                                    if ($stopSignal[0]) { break }
-                                    if ($scores.Count -gt 0) {
-                                        $avgScore = ($scores | Measure-Object -Average).Average
-                                        if (!$isCached) {
-                                            Write-Output @{ Type="Log"; Msg="[PROBE] Pass $attempt : CQ $currentCQ -> VMAF: $([math]::Round($avgScore, 2))" }
+                                    if ($scores.Count -eq 0 -or $stopSignal[0]) { return $null }
+                                    
+                                    $avg = ($scores | Measure-Object -Average).Average
+                                    Write-Output @{ Type="Log"; Msg="[PROBE] ${passLabel}CQ $cqVal -> VMAF: $([math]::Round($avg, 2))" }
+                                    
+                                    # Update probe cache
+                                    if ($probeCache -ne $null) {
+                                        $probeCache.Probes[$strCq] = $avg
+                                        if ($avg -gt $probeCache.MaxAchievableVmaf) {
+                                            $probeCache.MaxAchievableVmaf = $avg
+                                            $probeCache.MaxVmafCq = $cqVal
                                         }
-                                        Write-Output @{ Type="VmafUpdate"; Score=$avgScore }
-                                        
-                                        if ($avgScore -gt $maxScore) {
-                                            $maxScore = $avgScore
-                                            $maxScoreCq = $currentCQ
-                                        }
-                                        
-                                        if ([math]::Abs($avgScore - $targetVmaf) -lt [math]::Abs($bestScore - $targetVmaf)) {
-                                            $bestCQ = $currentCQ
-                                            $bestScore = $avgScore
-                                        }
-                                        
-                                        if ([math]::Abs($avgScore - $targetVmaf) -le 0.5) { break }
-                                        
-                                        $direction = if ($avgScore -gt $targetVmaf) { 1 } else { -1 }
-                                        if ($lastDir -ne 0 -and $direction -ne $lastDir) {
-                                            if ($currentStep -gt 1) { $currentStep = [math]::Floor($currentStep / 2) } else { break }
-                                        }
-                                        $lastDir = $direction
-                                        $currentCQ += ($direction * $currentStep)
-                                        if ($currentCQ -lt 0 -or $currentCQ -gt 51) { break }
+                                        try {
+                                            $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile
+                                        } catch {}
+                                    }
+                                    return $avg
+                                }
+
+                                # --- Phase 1: Boundary Probing ---
+                                $cqMin = 1
+                                $cqMax = 51
+                                
+                                # Probe high CQ (lowest quality = VMAF floor)
+                                Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." }
+                                $floorScore = & $probeSingleCq $cqMax "Boundary Floor: "
+                                if ($floorScore -ne $null) {
+                                    if ($floorScore -gt $maxScore) { $maxScore = $floorScore; $maxScoreCq = $cqMax }
+                                    if ([math]::Abs($floorScore - $target) -lt [math]::Abs($bestScore - $target)) { $bestCQ = $cqMax; $bestScore = $floorScore }
+                                    Write-Output @{ Type="VmafUpdate"; Score=$floorScore }
+                                    if ([math]::Abs($floorScore - $target) -le 0.5) {
+                                        # Floor already matches target
+                                    } elseif ($floorScore -ge $target) {
+                                        Write-Output @{ Type="Log"; Msg="[PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore,2)) >= $target). Max compression achieved." }
+                                        # Skip to encode
                                     } else {
-                                        break
+                                        # Need to probe ceiling
+                                        if (!$stopSignal[0]) {
+                                            Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." }
+                                            $ceilingScore = & $probeSingleCq $cqMin "Boundary Ceiling: "
+                                            if ($ceilingScore -ne $null) {
+                                                if ($ceilingScore -gt $maxScore) { $maxScore = $ceilingScore; $maxScoreCq = $cqMin }
+                                                if ([math]::Abs($ceilingScore - $target) -lt [math]::Abs($bestScore - $target)) { $bestCQ = $cqMin; $bestScore = $ceilingScore }
+                                                Write-Output @{ Type="VmafUpdate"; Score=$ceilingScore }
+                                                if ([math]::Abs($ceilingScore - $target) -le 0.5) {
+                                                    # Ceiling matches target
+                                                } elseif ($ceilingScore -lt $target) {
+                                                    Write-Output @{ Type="Log"; Msg="[PROBE] Ceiling CQ $cqMin can't reach target ($([math]::Round($ceilingScore,2)) < $target). Returning best achievable." }
+                                                } else {
+                                                    # --- Phase 2: Binary Search between bounds ---
+                                                    $lowCq = $cqMin
+                                                    $highCq = $cqMax
+
+                                                    for ($attempt = 1; $attempt -le 15; $attempt++) {
+                                                        if ($stopSignal[0]) { break }
+                                                        if (($highCq - $lowCq) -le 1) { break }
+                                                        
+                                                        $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+                                                        
+                                                        $score = & $probeSingleCq $midCq "Pass $attempt : "
+                                                        if ($score -eq $null) { break }
+                                                        
+                                                        if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
+                                                        if ([math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) { $bestCQ = $midCq; $bestScore = $score }
+                                                        Write-Output @{ Type="VmafUpdate"; Score=$score }
+                                                        
+                                                        if ([math]::Abs($score - $target) -le 0.5) { break }
+                                                        
+                                                        if ($score -gt $target) {
+                                                            # Quality too high, move toward higher CQ
+                                                            $lowCq = $midCq
+                                                        } else {
+                                                            # Quality too low, move toward lower CQ
+                                                            $highCq = $midCq
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             } finally {
