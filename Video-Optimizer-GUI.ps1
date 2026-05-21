@@ -534,43 +534,82 @@ $btnStart.Add_Click({
                                     return $avg
                                 }
 
-                                 # --- Binary Search between bounds ---
-                                 $cqMin = 1
-                                 $cqMax = 51
-                                 $lowCq = $cqMin
-                                 $highCq = $cqMax
-                                 
-                                 $bestCQ = [math]::Floor(($lowCq + $highCq) / 2)
-                                 $bestScore = 0
-                                 $maxScore = 0
-                                 $maxScoreCq = $bestCQ
+                                  # --- Boundary-Bounded Binary Search ---
+                                  $cqMin = 1
+                                  $cqMax = 51
+                                  
+                                  $bestCQ = $cqMin
+                                  $bestScore = 0
+                                  $maxScore = 0
+                                  $maxScoreCq = $cqMin
+                                  $skipSearch = $false
 
-                                 for ($attempt = 1; $attempt -le 15; $attempt++) {
-                                     if ($stopSignal[0]) { break }
-                                     if (($highCq - $lowCq) -le 1) { break }
-                                     
-                                     $midCq = [math]::Floor(($lowCq + $highCq) / 2)
-                                     
-                                     $score = & $probeSingleCq $midCq "Pass $attempt : "
-                                     if ($score -eq $null) { break }
-                                     
-                                     if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
-                                     if ($bestScore -eq 0 -or [math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) {
-                                         $bestCQ = $midCq
-                                         $bestScore = $score
-                                     }
-                                     Write-Output @{ Type="VmafUpdate"; Score=$score }
-                                     
-                                     if ([math]::Abs($score - $target) -le 0.5) { break }
-                                     
-                                     if ($score -gt $target) {
-                                         # Quality too high, move toward higher CQ
-                                         $lowCq = $midCq
-                                     } else {
-                                         # Quality too low, move toward lower CQ
-                                         $highCq = $midCq
-                                     }
-                                 }
+                                  # 1. Probe floor extreme (cqMax, lowest quality) first
+                                  Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." }
+                                  $floorScore = & $probeSingleCq $cqMax "Boundary Floor: "
+                                  if ($null -ne $floorScore) {
+                                      if ($floorScore -gt $maxScore) { $maxScore = $floorScore; $maxScoreCq = $cqMax }
+                                      $bestCQ = $cqMax
+                                      $bestScore = $floorScore
+                                      # If floor score meets or exceeds target, immediate exit with max compression
+                                      if ($floorScore -ge $target) {
+                                          Write-Output @{ Type="Log"; Msg="[PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore, 2)) >= $target). Max compression achieved." }
+                                          $skipSearch = $true
+                                      }
+                                  }
+
+                                  if ($stopSignal[0]) { $skipSearch = $true }
+
+                                  # 2. Probe ceiling extreme (cqMin, highest quality) second
+                                  if (-not $skipSearch) {
+                                      Write-Output @{ Type="Log"; Msg="[PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." }
+                                      $ceilingScore = & $probeSingleCq $cqMin "Boundary Ceiling: "
+                                      if ($null -ne $ceilingScore) {
+                                          if ($ceilingScore -gt $maxScore) { $maxScore = $ceilingScore; $maxScoreCq = $cqMin }
+                                          $bestCQ = $cqMin
+                                          $bestScore = $ceilingScore
+                                          # If ceiling score cannot reach target, return best achievable
+                                          if ($ceilingScore -lt $target) {
+                                              Write-Output @{ Type="Log"; Msg="[PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $target). Returning best achievable." }
+                                              $skipSearch = $true
+                                          }
+                                      }
+                                  }
+
+                                  if ($stopSignal[0]) { $skipSearch = $true }
+
+                                  # 3. Only perform midpoint binary search iterations if target lies strictly between the bounds
+                                  if (-not $skipSearch) {
+                                      $lowCq = $cqMin
+                                      $highCq = $cqMax
+                                      
+                                      for ($attempt = 1; $attempt -le 15; $attempt++) {
+                                          if ($stopSignal[0]) { break }
+                                          if (($highCq - $lowCq) -le 1) { break }
+                                          
+                                          $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+                                          
+                                          $score = & $probeSingleCq $midCq "Pass $attempt : "
+                                          if ($score -eq $null) { break }
+                                          
+                                          if ($score -gt $maxScore) { $maxScore = $score; $maxScoreCq = $midCq }
+                                          if ($bestScore -eq 0 -or [math]::Abs($score - $target) -lt [math]::Abs($bestScore - $target)) {
+                                              $bestCQ = $midCq
+                                              $bestScore = $score
+                                          }
+                                          Write-Output @{ Type="VmafUpdate"; Score=$score }
+                                          
+                                          if ([math]::Abs($score - $target) -le 0.5) { break }
+                                          
+                                          if ($score -gt $target) {
+                                              # Quality too high, move toward higher CQ (lower quality)
+                                              $lowCq = $midCq
+                                          } else {
+                                              # Quality too low, move toward lower CQ (higher quality)
+                                              $highCq = $midCq
+                                          }
+                                      }
+                                  }
                             } finally {
                                 foreach ($sampleSrc in $refSamples) {
                                     if (Test-Path $sampleSrc) { Remove-Item $sampleSrc -Force }

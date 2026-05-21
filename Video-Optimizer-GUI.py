@@ -287,18 +287,47 @@ class VideoOptimizerEngine:
             # --- Binary Search between bounds ---
             cq_min = config.get('CqMin', 1)
             cq_max = config.get('CqMax', 51)
-            low_cq = cq_min   # high quality end (lowest CQ)
-            high_cq = cq_max  # low quality end (highest CQ)
             
-            best_cq = (low_cq + high_cq) // 2
+            best_cq = cq_min
             best_score = 0
             max_score = 0
-            max_score_cq = best_cq
+            max_score_cq = cq_min
+
+            # 1. Check CQ/CRF cq_max (floor) and record/remember output data
+            self.log(f"[PROBE] Boundary: Testing VMAF floor at CQ {cq_max}...")
+            floor_score = probe_cq(cq_max, "Boundary Floor: ")
+            if floor_score is not None:
+                update_best(cq_max, floor_score)
+                # If even floor exceeds target, we immediately use max compression
+                if floor_score >= target_vmaf:
+                    self.log(f"[PROBE] Floor CQ {cq_max} already meets target ({floor_score:.2f} >= {target_vmaf}). Max compression achieved.")
+                    return cq_max, floor_score, max_score, max_score_cq
+
+            if self.stop_requested:
+                return best_cq, best_score, max_score, max_score_cq
+
+            # 2. Check CQ/CRF cq_min (ceiling) and record/remember output data
+            self.log(f"[PROBE] Boundary: Testing VMAF ceiling at CQ {cq_min}...")
+            ceiling_score = probe_cq(cq_min, "Boundary Ceiling: ")
+            if ceiling_score is not None:
+                update_best(cq_min, ceiling_score)
+                # If even the highest quality cannot reach target VMAF
+                if ceiling_score < target_vmaf:
+                    self.log(f"[PROBE] Ceiling CQ {cq_min} cannot reach target ({ceiling_score:.2f} < {target_vmaf}). Returning best achievable.")
+                    return cq_min, ceiling_score, max_score, max_score_cq
+
+            if self.stop_requested:
+                return best_cq, best_score, max_score, max_score_cq
+
+            # 3. If target lies in between, proceed with binary search
+            low_cq = cq_min
+            high_cq = cq_max
 
             for attempt in range(1, 16):
                 if self.stop_requested:
                     break
                 
+                # Stop if there are no more integer points between low and high
                 if high_cq - low_cq <= 1:
                     break
                 

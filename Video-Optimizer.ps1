@@ -581,36 +581,67 @@ function Find-OptimalCq {
             }
         }
 
-        # --- Binary Search between bounds ---
+        # --- Boundary-Bounded Binary Search ---
         $cqMin = $global:vmafMinCQ
         $cqMax = $global:vmafMaxCQ
-        $lowCq = $cqMin
-        $highCq = $cqMax
 
-        $script:bestCQ = [math]::Floor(($lowCq + $highCq) / 2)
+        $script:bestCQ = $cqMin
         $script:bestScore = 0
         $script:bestDiff = 100
         $script:maxScore = 0
-        $script:maxScoreCQ = $script:bestCQ
+        $script:maxScoreCQ = $cqMin
+        $skipSearch = $false
 
-        for ($attempt = 1; $attempt -le 15; $attempt++) {
-            if (($highCq - $lowCq) -le 1) { break }
+        # 1. Probe floor extreme (cqMax, lowest quality) first
+        Write-Host "     [PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." -ForegroundColor Gray
+        $floorScore = Invoke-CqProbe -CqVal $cqMax -Label "Boundary Floor: "
+        if ($floorScore -gt 0) {
+            Update-BestTracking -CqVal $cqMax -ScoreVal $floorScore
+            # If even floor meets target, we immediately use max compression
+            if ($floorScore -ge $TargetVmaf) {
+                Write-Host "     [PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore, 2)) >= $TargetVmaf). Max compression achieved." -ForegroundColor Green
+                $skipSearch = $true
+            }
+        }
+
+        # 2. Probe ceiling extreme (cqMin, highest quality) second
+        if (-not $skipSearch) {
+            Write-Host "     [PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." -ForegroundColor Gray
+            $ceilingScore = Invoke-CqProbe -CqVal $cqMin -Label "Boundary Ceiling: "
+            if ($ceilingScore -gt 0) {
+                Update-BestTracking -CqVal $cqMin -ScoreVal $ceilingScore
+                # If even the highest quality cannot reach target VMAF
+                if ($ceilingScore -lt $TargetVmaf) {
+                    Write-Host "     [PROBE] Ceiling CQ $cqMin cannot reach target ($([math]::Round($ceilingScore, 2)) < $TargetVmaf). Returning best achievable." -ForegroundColor Yellow
+                    $skipSearch = $true
+                }
+            }
+        }
+
+        # 3. Only perform midpoint binary search iterations if target lies strictly between the bounds
+        if (-not $skipSearch) {
+            $lowCq = $cqMin
+            $highCq = $cqMax
             
-            $midCq = [math]::Floor(($lowCq + $highCq) / 2)
-            
-            $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
-            if ($score -le 0) { break }
-            
-            Update-BestTracking -CqVal $midCq -ScoreVal $score
-            
-            if ([math]::Abs($score - $TargetVmaf) -le 0.5) { break }
-            
-            if ($score -gt $TargetVmaf) {
-                # Quality too high, move toward higher CQ
-                $lowCq = $midCq
-            } else {
-                # Quality too low, move toward lower CQ
-                $highCq = $midCq
+            for ($attempt = 1; $attempt -le 15; $attempt++) {
+                if (($highCq - $lowCq) -le 1) { break }
+                
+                $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+                
+                $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
+                if ($score -le 0) { break }
+                
+                Update-BestTracking -CqVal $midCq -ScoreVal $score
+                
+                if ([math]::Abs($score - $TargetVmaf) -le 0.5) { break }
+                
+                if ($score -gt $TargetVmaf) {
+                    # Quality too high, move toward higher CQ (lower quality)
+                    $lowCq = $midCq
+                } else {
+                    # Quality too low, move toward lower CQ (higher quality)
+                    $highCq = $midCq
+                }
             }
         }
     } finally {
