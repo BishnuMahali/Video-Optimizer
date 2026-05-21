@@ -574,70 +574,43 @@ function Find-OptimalCq {
                 $script:maxScoreCQ = $CqVal
             }
             $diff = [math]::Abs($ScoreVal - $TargetVmaf)
-            if ($diff -lt $script:bestDiff) {
+            if ($script:bestScore -eq 0 -or $diff -lt $script:bestDiff) {
                 $script:bestDiff = $diff
                 $script:bestCQ = $CqVal
                 $script:bestScore = $ScoreVal
             }
         }
 
-        # --- Phase 1: Boundary Probing ---
+        # --- Binary Search between bounds ---
         $cqMin = $global:vmafMinCQ
         $cqMax = $global:vmafMaxCQ
-        $skipBinarySearch = $false
-        
-        # Probe high CQ (lowest quality = VMAF floor)
-        Write-Host "     [PROBE] Boundary: Testing VMAF floor at CQ $cqMax..." -ForegroundColor Gray
-        $floorScore = Invoke-CqProbe -CqVal $cqMax -Label "Boundary Floor: "
-        if ($floorScore -gt 0) {
-            Update-BestTracking -CqVal $cqMax -ScoreVal $floorScore
-            if ([math]::Abs($floorScore - $TargetVmaf) -le 0.5) {
-                $skipBinarySearch = $true
-            } elseif ($floorScore -ge $TargetVmaf) {
-                Write-Host "     [PROBE] Floor CQ $cqMax already meets target ($([math]::Round($floorScore,2)) >= $TargetVmaf). Max compression achieved." -ForegroundColor Green
-                $skipBinarySearch = $true
-            }
-        }
+        $lowCq = $cqMin
+        $highCq = $cqMax
 
-        if (-not $skipBinarySearch) {
-            # Probe low CQ (highest quality = VMAF ceiling)
-            Write-Host "     [PROBE] Boundary: Testing VMAF ceiling at CQ $cqMin..." -ForegroundColor Gray
-            $ceilingScore = Invoke-CqProbe -CqVal $cqMin -Label "Boundary Ceiling: "
-            if ($ceilingScore -gt 0) {
-                Update-BestTracking -CqVal $cqMin -ScoreVal $ceilingScore
-                if ([math]::Abs($ceilingScore - $TargetVmaf) -le 0.5) {
-                    $skipBinarySearch = $true
-                } elseif ($ceilingScore -lt $TargetVmaf) {
-                    Write-Host "     [PROBE] Ceiling CQ $cqMin can't reach target ($([math]::Round($ceilingScore,2)) < $TargetVmaf). Returning best achievable." -ForegroundColor Yellow
-                    $skipBinarySearch = $true
-                }
-            }
-        }
+        $script:bestCQ = [math]::Floor(($lowCq + $highCq) / 2)
+        $script:bestScore = 0
+        $script:bestDiff = 100
+        $script:maxScore = 0
+        $script:maxScoreCQ = $script:bestCQ
 
-        if (-not $skipBinarySearch) {
-            # --- Phase 2: Binary Search between bounds ---
-            $lowCq = $cqMin
-            $highCq = $cqMax
-
-            for ($attempt = 1; $attempt -le 15; $attempt++) {
-                if (($highCq - $lowCq) -le 1) { break }
-                
-                $midCq = [math]::Floor(($lowCq + $highCq) / 2)
-                
-                $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
-                if ($score -le 0) { break }
-                
-                Update-BestTracking -CqVal $midCq -ScoreVal $score
-                
-                if ([math]::Abs($score - $TargetVmaf) -le 0.5) { break }
-                
-                if ($score -gt $TargetVmaf) {
-                    # Quality too high, move toward higher CQ
-                    $lowCq = $midCq
-                } else {
-                    # Quality too low, move toward lower CQ
-                    $highCq = $midCq
-                }
+        for ($attempt = 1; $attempt -le 15; $attempt++) {
+            if (($highCq - $lowCq) -le 1) { break }
+            
+            $midCq = [math]::Floor(($lowCq + $highCq) / 2)
+            
+            $score = Invoke-CqProbe -CqVal $midCq -Label "Pass $attempt : "
+            if ($score -le 0) { break }
+            
+            Update-BestTracking -CqVal $midCq -ScoreVal $score
+            
+            if ([math]::Abs($score - $TargetVmaf) -le 0.5) { break }
+            
+            if ($score -gt $TargetVmaf) {
+                # Quality too high, move toward higher CQ
+                $lowCq = $midCq
+            } else {
+                # Quality too low, move toward lower CQ
+                $highCq = $midCq
             }
         }
     } finally {

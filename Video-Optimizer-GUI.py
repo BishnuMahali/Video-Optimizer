@@ -280,50 +280,20 @@ class VideoOptimizerEngine:
                 if score_val > max_score:
                     max_score = score_val
                     max_score_cq = cq_val
-                if abs(score_val - target_vmaf) < abs(best_score - target_vmaf):
+                if best_score == 0 or abs(score_val - target_vmaf) < abs(best_score - target_vmaf):
                     best_cq = cq_val
                     best_score = score_val
 
-            # --- Phase 1: Boundary Probing ---
-            # Probe the extreme CQs to establish VMAF floor & ceiling instantly
+            # --- Binary Search between bounds ---
             cq_min = config.get('CqMin', 1)
             cq_max = config.get('CqMax', 51)
+            low_cq = cq_min   # high quality end (lowest CQ)
+            high_cq = cq_max  # low quality end (highest CQ)
             
-            # Probe high CQ (lowest quality = VMAF floor)
-            self.log(f"[PROBE] Boundary: Testing VMAF floor at CQ {cq_max}...")
-            floor_score = probe_cq(cq_max, "Boundary Floor: ")
-            if floor_score is not None:
-                update_best(cq_max, floor_score)
-                if abs(floor_score - target_vmaf) <= 0.5:
-                    return best_cq, best_score, max_score, max_score_cq
-                if floor_score >= target_vmaf:
-                    # Even worst quality exceeds target — use it directly (maximum compression)
-                    self.log(f"[PROBE] Floor CQ {cq_max} already meets target ({floor_score:.2f} >= {target_vmaf}). Max compression achieved.")
-                    return best_cq, best_score, max_score, max_score_cq
-
-            if self.stop_requested:
-                return best_cq, best_score, max_score, max_score_cq
-
-            # Probe low CQ (highest quality = VMAF ceiling)
-            self.log(f"[PROBE] Boundary: Testing VMAF ceiling at CQ {cq_min}...")
-            ceiling_score = probe_cq(cq_min, "Boundary Ceiling: ")
-            if ceiling_score is not None:
-                update_best(cq_min, ceiling_score)
-                if abs(ceiling_score - target_vmaf) <= 0.5:
-                    return best_cq, best_score, max_score, max_score_cq
-                if ceiling_score < target_vmaf:
-                    # Even best quality can't reach target — return best achievable
-                    self.log(f"[PROBE] Ceiling CQ {cq_min} can't reach target ({ceiling_score:.2f} < {target_vmaf}). Returning best achievable.")
-                    return best_cq, best_score, max_score, max_score_cq
-
-            if self.stop_requested:
-                return best_cq, best_score, max_score, max_score_cq
-
-            # --- Phase 2: Binary Search between bounds ---
-            # Narrow the search range based on boundary probes
-            low_cq = cq_min   # high quality end
-            high_cq = cq_max  # low quality end
-            current_step = 2   # default step size reduced from 4 to 2
+            best_cq = (low_cq + high_cq) // 2
+            best_score = 0
+            max_score = 0
+            max_score_cq = best_cq
 
             for attempt in range(1, 16):
                 if self.stop_requested:
