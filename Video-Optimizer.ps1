@@ -87,7 +87,7 @@ $onSuccessAction = "Replace Original"
 
 # Failed file handling
 $unoptOptions = @("Move to 'Unoptimizable'", "Move to Custom Folder...", "Delete File", "Ignore (Keep Original)")
-$unoptAction = "Move to 'Unoptimizable'"
+$unoptAction = "Ignore (Keep Original)"
 $unoptCustomFolder = ""
 
 # --- File Filtering Variables ---
@@ -159,6 +159,8 @@ function Load-Config {
             if ($null -ne $config.Recursive) { $global:recursive = [bool]$config.Recursive }
             if ($null -ne $config.VmafEnabled) { $global:vmafEnabled = [bool]$config.VmafEnabled }
             if ($config.VmafTarget) { $global:vmafTarget = [string]$config.VmafTarget }
+            if ($null -ne $config.VmafFallback) { $global:vmafFallback = [bool]$config.VmafFallback }
+            if ($null -ne $config.VmafMinCeiling) { $global:vmafMinCeiling = [double]$config.VmafMinCeiling }
             if ($config.VmafMinCQ) { $global:vmafMinCQ = [int]$config.VmafMinCQ }
             if ($config.VmafMaxCQ) { $global:vmafMaxCQ = [int]$config.VmafMaxCQ }
             if ($config.VmafStep) { $global:vmafStep = [int]$config.VmafStep }
@@ -922,10 +924,15 @@ while ($runningMenu) {
                         else { $global:preset = $currentPresets[0] }
                     }
                 }
-                "Target VMAF" { 
-                    $firstVal = [double](($global:vmafTarget -split ',')[0])
-                    $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))" 
+                "Target VMAF" {
+                    $parts = @($global:vmafTarget -split ',')
+                    if ($parts.Count -le 1) {
+                        $firstVal = [double]$parts[0]
+                        $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))"
+                    }
                 }
+                "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
+                "Min Ceiling" { $global:vmafMinCeiling = [math]::Max(0, $global:vmafMinCeiling - 1) }
                 "CQ Range" { $global:vmafMinCQ = [math]::Max(0, $global:vmafMinCQ - 1) }
                 "Search Step" {
                     $idx = [array]::IndexOf($global:stepOptions, $global:vmafStep)
@@ -988,10 +995,15 @@ while ($runningMenu) {
                         else { $global:preset = $currentPresets[0] }
                     }
                 }
-                "Target VMAF" { 
-                    $firstVal = [double](($global:vmafTarget -split ',')[0])
-                    $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))" 
+                "Target VMAF" {
+                    $parts = @($global:vmafTarget -split ',')
+                    if ($parts.Count -le 1) {
+                        $firstVal = [double]$parts[0]
+                        $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))"
+                    }
                 }
+                "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
+                "Min Ceiling" { $global:vmafMinCeiling = [math]::Min(100, $global:vmafMinCeiling + 1) }
                 "CQ Range" { $global:vmafMinCQ = [math]::Min($global:vmafMaxCQ - 1, $global:vmafMinCQ + 1) }
                 "Search Step" {
                     $idx = [array]::IndexOf($global:stepOptions, $global:vmafStep)
@@ -1070,8 +1082,12 @@ while ($runningMenu) {
                     "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
                     "Min Ceiling" {
                         Write-Host "`n"
-                        $newCeil = Read-Host "Enter Min VMAF Ceiling (e.g. 85)"
-                        if ($newCeil -as [double] -and $newCeil -ge 0 -and $newCeil -le 100) { $global:vmafMinCeiling = [double]$newCeil }
+                        $newCeil = Read-Host "Enter Min VMAF Ceiling (0-100, e.g. 85)"
+                        if ($newCeil -match '^\d+\.?\d*$') {
+                            $val = [double]$newCeil
+                            if ($val -ge 0 -and $val -le 100) { $global:vmafMinCeiling = $val }
+                            else { Write-Host "Value must be between 0 and 100!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                        } else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
                     }
                     "Quality" {
                         Write-Host "`n"
