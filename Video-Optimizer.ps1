@@ -1,4 +1,4 @@
-# Ultimate Video Optimizer
+﻿# Ultimate Video Optimizer
 # Version: 3.0.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
@@ -1562,3 +1562,4 @@ if ($totalFiles -eq 0) {
 }
 
 Write-Host ""
+
