@@ -51,7 +51,7 @@ $targetFolder = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFro
 $recursive = $true # Enabled by default
 
 # --- Preset Options ---
-$presetOptions = @{
+$global:presetOptions = @{
     "nvenc"     = @("p1", "p2", "p3", "p4", "p5", "p6", "p7")
     "libsvtav1" = @("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13")
     "cpu"       = @("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo")
@@ -62,53 +62,53 @@ $presetOptions = @{
 
 function Get-PresetList {
     param([string]$Codec)
-    if ($Codec -match "nvenc") { return $presetOptions["nvenc"] }
-    if ($Codec -match "libsvtav1") { return $presetOptions["libsvtav1"] }
-    if ($Codec -match "libx265|libx264") { return $presetOptions["cpu"] }
-    if ($Codec -match "qsv") { return $presetOptions["qsv"] }
-    if ($Codec -match "amf") { return $presetOptions["amf"] }
-    return $presetOptions["default"]
+    if ($Codec -match "nvenc") { return $global:presetOptions["nvenc"] }
+    if ($Codec -match "libsvtav1") { return $global:presetOptions["libsvtav1"] }
+    if ($Codec -match "libx265|libx264") { return $global:presetOptions["cpu"] }
+    if ($Codec -match "qsv") { return $global:presetOptions["qsv"] }
+    if ($Codec -match "amf") { return $global:presetOptions["amf"] }
+    return $global:presetOptions["default"]
 }
 
 # Pick best supported encoder by rank
-$defaultEnc = $availableEncoders | Where-Object Supported | Sort-Object Rank | Select-Object -First 1
-$selectedEncoderId = $defaultEnc.ID
+$global:defaultEnc = $availableEncoders | Where-Object Supported | Sort-Object Rank | Select-Object -First 1
+$global:selectedEncoderId = $global:defaultEnc.ID
 
-$quality = "23,26,29"
-$currentPresets = Get-PresetList $defaultEnc.Codec
-$preset = if ($defaultEnc.Codec -match "nvenc") { "p5" } elseif ($defaultEnc.Codec -match "libsvtav1") { "6" } elseif ($defaultEnc.Codec -match "libx265|libx264") { "slow" } else { $currentPresets[0] }
+$global:quality = "23,26,29"
+$global:currentPresets = Get-PresetList $global:defaultEnc.Codec
+$global:preset = if ($global:defaultEnc.Codec -match "nvenc") { "p5" } elseif ($global:defaultEnc.Codec -match "libsvtav1") { "6" } elseif ($global:defaultEnc.Codec -match "libx265|libx264") { "slow" } else { $global:currentPresets[0] }
 
-$audioAction = "Copy"
-$container = "MP4"
+$global:audioAction = "Copy"
+$global:container = "MP4"
 
 # Success file handling
-$onSuccessOptions = @("Replace Original", "Keep Original (Add _opt)")
-$onSuccessAction = "Replace Original"
+$global:onSuccessOptions = @("Replace Original", "Keep Original (Add _opt)")
+$global:onSuccessAction = "Replace Original"
 
 # Failed file handling
-$unoptOptions = @("Move to 'Unoptimizable'", "Move to Custom Folder...", "Delete File", "Ignore (Keep Original)")
-$unoptAction = "Ignore (Keep Original)"
-$unoptCustomFolder = ""
+$global:unoptOptions = @("Move to 'Unoptimizable'", "Move to Custom Folder...", "Delete File", "Ignore (Keep Original)")
+$global:unoptAction = "Ignore (Keep Original)"
+$global:unoptCustomFolder = ""
 
 # --- File Filtering Variables ---
-$knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg', '.rm', '.rmvb', '.3gp', '.3g2', '.ogv', '.mp4v', '.f4v', '.asf', '.divx', '.xvid', '.yuv', '.viv', '.mxf')
-$knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.lnk', '.exe', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.cfa', '.pek', '.ffx', '.prfpset', '.ds_store', '.setting', '.drp', '.cube', '.url', '.drfx', '.ttf', '.otf', '.eot', '.woff', '.woff2', '.fon', '.ttc', '.compositefont', '.dat', '.htm', '.eps', '.jfif', '.avif', '.sfk', '.mogrt', '.prproj', '.aep', '.aegraphic', '.aif', '.atn', '.abr', '.grd', '.pat', '.asl', '.settings', '.zxp', '.rtf', '.plp', '.apk', '.docx', '.atom')
-$efficientCodecs = @('hevc', 'h265', 'av1')
-$skipEfficient = $true
-$enableCache = $true
+$global:knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg', '.rm', '.rmvb', '.3gp', '.3g2', '.ogv', '.mp4v', '.f4v', '.asf', '.divx', '.xvid', '.yuv', '.viv', '.mxf')
+$global:knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.lnk', '.exe', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.cfa', '.pek', '.ffx', '.prfpset', '.ds_store', '.setting', '.drp', '.cube', '.url', '.drfx', '.ttf', '.otf', '.eot', '.woff', '.woff2', '.fon', '.ttc', '.compositefont', '.dat', '.htm', '.eps', '.jfif', '.avif', '.sfk', '.mogrt', '.prproj', '.aep', '.aegraphic', '.aif', '.atn', '.abr', '.grd', '.pat', '.asl', '.settings', '.zxp', '.rtf', '.plp', '.apk', '.docx', '.atom')
+$global:efficientCodecs = @('hevc', 'h265', 'av1')
+$global:skipEfficient = $true
+$global:enableCache = $true
 
 # --- VMAF Variables ---
-$hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
-$vmafEnabled = $true
-$vmafFallback = $false
-$vmafMinCeiling = 85.0
-$vmafTarget = "93"
-$vmafMinCQ = 0
-$vmafMaxCQ = 51
-$vmafStep = 2
-$vmafSampleDuration = 5
-$vmafSampleCount = 3
-$stepOptions = @(1, 2, 3, 4, 5, 6, 8)
+$global:hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
+$global:vmafEnabled = $true
+$global:vmafFallback = $false
+$global:vmafMinCeiling = 85.0
+$global:vmafTarget = "93"
+$global:vmafMinCQ = 0
+$global:vmafMaxCQ = 51
+$global:vmafStep = 2
+$global:vmafSampleDuration = 5
+$global:vmafSampleCount = 3
+$global:stepOptions = @(1, 2, 3, 4, 5, 6, 8)
 
 # --- Configuration Handling ---
 $configFile = Join-Path $PSScriptRoot "config.json"
@@ -358,15 +358,15 @@ function Write-SummaryBox {
 
 
 # --- VMAF Advanced Logic ---
-$hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
-$vmafEnabled = $true
-$vmafTarget = "93"
-$vmafMinCQ = 0
-$vmafMaxCQ = 51
-$vmafStep = 2
-$vmafSampleDuration = 5
-$vmafSampleCount = 3
-$stepOptions = @(1, 2, 3, 4, 5, 6, 8)
+$global:hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
+$global:vmafEnabled = $true
+$global:vmafTarget = "93"
+$global:vmafMinCQ = 0
+$global:vmafMaxCQ = 51
+$global:vmafStep = 2
+$global:vmafSampleDuration = 5
+$global:vmafSampleCount = 3
+$global:stepOptions = @(1, 2, 3, 4, 5, 6, 8)
 
 function Get-VmafScore {
     param(
@@ -824,28 +824,28 @@ while ($runningMenu) {
     }
 
     $items = @()
-    $items += @{ Label = "Target Folder"; Value = $targetFolder; Hint = "" }
-    $recursiveDisplay = if ($recursive) { 'Yes' } else { 'No' }
+    $items += @{ Label = "Target Folder"; Value = $global:targetFolder; Hint = "" }
+    $recursiveDisplay = if ($global:recursive) { 'Yes' } else { 'No' }
     $items += @{ Label = "Recursive"; Value = $recursiveDisplay; Hint = "" }
 
-    $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
+    $skipEffDisplay = if ($global:skipEfficient) { 'Yes' } else { 'No' }
     $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
 
-    $vmafDisplay = if ($vmafEnabled) { "Enabled" } else { "Disabled" }
-    $vmafHint = if (-not $hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file. [Rec: 1-3 Samples, 3-5s Probe, Target 93-95]" }
+    $vmafDisplay = if ($global:vmafEnabled) { "Enabled" } else { "Disabled" }
+    $vmafHint = if (-not $global:hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file. [Rec: 1-3 Samples, 3-5s Probe, Target 93-95]" }
     $items += @{ Label = "Advanced VMAF"; Value = $vmafDisplay; Hint = $vmafHint }
 
     $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "" }
 
-    if ($vmafEnabled) {
-        $fallbackDisplay = if ($vmafFallback) { "Yes" } else { "No" }
-        $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
+    if ($global:vmafEnabled) {
+        $fallbackDisplay = if ($global:vmafFallback) { "Yes" } else { "No" }
+        $items += @{ Label = "Target VMAF"; Value = $global:vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
         $items += @{ Label = "Encode with Max VMAF as Fallback"; Value = $fallbackDisplay; Hint = "Encode at optimal CQ even if Target VMAF is unreachable." }
-        $items += @{ Label = "Min Ceiling"; Value = $vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
-        $items += @{ Label = "CQ Range"; Value = "$vmafMinCQ to $vmafMaxCQ"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
-        $items += @{ Label = "Search Step"; Value = "$vmafStep points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
-        $items += @{ Label = "VMAF Samples"; Value = $vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
-        $items += @{ Label = "Probe Duration"; Value = "$vmafSampleDuration sec"; Hint = "Seconds Per Sample. Recommended: 3-5s. Longer = Better Accuracy, Slower Encoding." }
+        $items += @{ Label = "Min Ceiling"; Value = $global:vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
+        $items += @{ Label = "CQ Range"; Value = "$($global:vmafMinCQ) to $($global:vmafMaxCQ)"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
+        $items += @{ Label = "Search Step"; Value = "$($global:vmafStep) points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
+        $items += @{ Label = "VMAF Samples"; Value = $global:vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
+        $items += @{ Label = "Probe Duration"; Value = "$($global:vmafSampleDuration) sec"; Hint = "Seconds Per Sample. Recommended: 3-5s. Longer = Better Accuracy, Slower Encoding." }
     } else {
         $qHint = switch -regex ($activeEnc.Codec) {
             "nvenc" { "Recommended: 23,26,29 (CQ)" }
@@ -855,7 +855,7 @@ while ($runningMenu) {
             "libx265"   { "Recommended: 24,28,32 (CRF)" }
             Default { "Recommended: 23-30" }
         }
-        $items += @{ Label = "Quality"; Value = $quality; Hint = $qHint }
+        $items += @{ Label = "Quality"; Value = $global:quality; Hint = $qHint }
 
         $pHint = switch -regex ($activeEnc.Codec) {
             "nvenc" { "Options: p1 to p7 (p5=default, p7=slowest)" }
@@ -863,16 +863,16 @@ while ($runningMenu) {
             "libx265"   { "Options: ultrafast to placebo (slow=recommended)" }
             Default { "Enter encoder-specific preset" }
         }
-        $presetDisplay = if ($preset) { $preset } else { 'None' }
+        $presetDisplay = if ($global:preset) { $global:preset } else { 'None' }
         $items += @{ Label = "Preset"; Value = $presetDisplay; Hint = $pHint }
     }
 
-    $items += @{ Label = "Audio Action"; Value = $audioAction; Hint = "" }
-    $items += @{ Label = "Container"; Value = $container; Hint = "" }
+    $items += @{ Label = "Audio Action"; Value = $global:audioAction; Hint = "" }
+    $items += @{ Label = "Container"; Value = $global:container; Hint = "" }
 
-    $items += @{ Label = "Success Action"; Value = $onSuccessAction; Hint = "What to do if optimization succeeds" }
+    $items += @{ Label = "Success Action"; Value = $global:onSuccessAction; Hint = "What to do if optimization succeeds" }
 
-    $unoptDisplay = if ($unoptAction -match "Custom" -and $unoptCustomFolder) { "Custom ($unoptCustomFolder)" } else { $unoptAction }
+    $unoptDisplay = if ($global:unoptAction -match "Custom" -and $global:unoptCustomFolder) { "Custom ($($global:unoptCustomFolder))" } else { $global:unoptAction }
     $items += @{ Label = "Failed Action"; Value = $unoptDisplay; Hint = "What to do if optimization fails" }
 
     $startIndex = $items.Count
