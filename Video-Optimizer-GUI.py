@@ -999,22 +999,23 @@ class VideoOptimizerGUI(ctk.CTk):
         self.table_frame.grid(row=1, column=0, sticky="nsew")
         
         self.tree = ttk.Treeview(self.table_frame, columns=("Filename", "Old Size", "New Size", "Saving", "Status"), show="headings")
-        self.tree.heading("Filename", text="Filename")
-        self.tree.heading("Old Size", text="Old Size")
-        self.tree.heading("New Size", text="New Size")
-        self.tree.heading("Saving", text="Saving")
-        self.tree.heading("Status", text="Status")
-        self.tree.column("Filename", width=300)
-        self.tree.column("Old Size", width=80)
-        self.tree.column("New Size", width=80)
-        self.tree.column("Saving", width=70)
-        self.tree.column("Status", width=100)
+        self.tree.heading("Filename", text="Filename", anchor="w")
+        self.tree.heading("Old Size", text="Old Size", anchor="center")
+        self.tree.heading("New Size", text="New Size", anchor="center")
+        self.tree.heading("Saving", text="Saving", anchor="center")
+        self.tree.heading("Status", text="Status", anchor="w")
+        
+        self.tree.column("Filename", width=300, minwidth=150, stretch=True, anchor="w")
+        self.tree.column("Old Size", width=100, minwidth=80, stretch=False, anchor="center")
+        self.tree.column("New Size", width=100, minwidth=80, stretch=False, anchor="center")
+        self.tree.column("Saving", width=90, minwidth=70, stretch=False, anchor="center")
+        self.tree.column("Status", width=150, minwidth=100, stretch=False, anchor="w")
         
         self.tree_scroll = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=self.tree_scroll.set)
         
-        self.tree.pack(side="left", fill="both", expand=True)
-        self.tree_scroll.pack(side="right", fill="y")
+        self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        self.tree_scroll.pack(side="right", fill="y", padx=(0, 10), pady=10)
 
         # Logs
         self.log_text = ctk.CTkTextbox(self.main_frame, height=200, font=ctk.CTkFont(family="Consolas", size=13))
@@ -1225,6 +1226,16 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'VmafTarget' in config:
                     self.slider_vmaf.set(config['VmafTarget'])
                     self.update_vmaf_label(config['VmafTarget'])
+                if 'VmafSamples' in config:
+                    val = config['VmafSamples']
+                    if val == 1: self.combo_samples.set("1 Sample")
+                    elif val == 5: self.combo_samples.set("5 Samples")
+                    else: self.combo_samples.set("3 Samples (Balanced)")
+                if 'VmafDur' in config:
+                    val = config['VmafDur']
+                    if val == 3: self.combo_probe.set("3 Seconds")
+                    elif val == 10: self.combo_probe.set("10 Seconds")
+                    else: self.combo_probe.set("5 Seconds")
                 if 'VmafLadder' in config:
                     self.entry_vmaf_ladder.delete(0, "end")
                     self.entry_vmaf_ladder.insert(0, ", ".join(map(str, config['VmafLadder'])))
@@ -1271,6 +1282,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'VmafLadderEnabled': bool(self.chk_vmaf_ladder.get()),
                 'VmafMinCeiling': float(self.slider_vmaf_ceiling.get()),
                 'VmafTarget': int(self.slider_vmaf.get()),
+                'VmafSamples': 1 if "1 Sample" in self.combo_samples.get() else (5 if "5 Samples" in self.combo_samples.get() else 3),
+                'VmafDur': 3 if "3 Seconds" in self.combo_probe.get() else (10 if "10 Seconds" in self.combo_probe.get() else 5),
                 'VmafLadder': [int(x.strip()) for x in self.entry_vmaf_ladder.get().replace(',', ' ').split() if x.strip().isdigit()],
                 'QualityLadder': [int(x.strip()) for x in self.entry_ladder.get().replace(',', ' ').split() if x.strip().isdigit()],
                 'Preset': self.combo_preset.get(),

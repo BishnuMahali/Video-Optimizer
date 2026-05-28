@@ -1,4 +1,4 @@
-﻿# Ultimate Video Optimizer
+# Ultimate Video Optimizer
 # Version: 3.0.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
@@ -47,8 +47,8 @@ foreach ($enc in $availableEncoders) {
 
 # --- State Variables ---
 # Use GetUnresolvedProviderPathFromPSPath to handle relative paths and provider-qualified paths robustly
-$targetFolder = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(".\")
-$recursive = $true # Enabled by default
+$global:targetFolder = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(".\")
+$global:recursive = $true # Enabled by default
 
 # --- Preset Options ---
 $global:presetOptions = @{
@@ -87,7 +87,7 @@ $global:onSuccessAction = "Replace Original"
 
 # Failed file handling
 $global:unoptOptions = @("Move to 'Unoptimizable'", "Move to Custom Folder...", "Delete File", "Ignore (Keep Original)")
-$global:unoptAction = "Ignore (Keep Original)"
+$global:unoptAction = "Move to 'Unoptimizable'"
 $global:unoptCustomFolder = ""
 
 # --- File Filtering Variables ---
@@ -159,8 +159,6 @@ function Load-Config {
             if ($null -ne $config.Recursive) { $global:recursive = [bool]$config.Recursive }
             if ($null -ne $config.VmafEnabled) { $global:vmafEnabled = [bool]$config.VmafEnabled }
             if ($config.VmafTarget) { $global:vmafTarget = [string]$config.VmafTarget }
-            if ($null -ne $config.VmafFallback) { $global:vmafFallback = [bool]$config.VmafFallback }
-            if ($null -ne $config.VmafMinCeiling) { $global:vmafMinCeiling = [double]$config.VmafMinCeiling }
             if ($config.VmafMinCQ) { $global:vmafMinCQ = [int]$config.VmafMinCQ }
             if ($config.VmafMaxCQ) { $global:vmafMaxCQ = [int]$config.VmafMaxCQ }
             if ($config.VmafStep) { $global:vmafStep = [int]$config.VmafStep }
@@ -358,15 +356,7 @@ function Write-SummaryBox {
 
 
 # --- VMAF Advanced Logic ---
-$global:hasVmaf = (ffmpeg -filters 2>&1 | Out-String) -match "libvmaf"
-$global:vmafEnabled = $true
-$global:vmafTarget = "93"
-$global:vmafMinCQ = 0
-$global:vmafMaxCQ = 51
-$global:vmafStep = 2
-$global:vmafSampleDuration = 5
-$global:vmafSampleCount = 3
-$global:stepOptions = @(1, 2, 3, 4, 5, 6, 8)
+# Global VMAF configuration is loaded and initialized at script startup
 
 function Get-VmafScore {
     param(
@@ -824,28 +814,28 @@ while ($runningMenu) {
     }
 
     $items = @()
-    $items += @{ Label = "Target Folder"; Value = $global:targetFolder; Hint = "" }
-    $recursiveDisplay = if ($global:recursive) { 'Yes' } else { 'No' }
+    $items += @{ Label = "Target Folder"; Value = $targetFolder; Hint = "" }
+    $recursiveDisplay = if ($recursive) { 'Yes' } else { 'No' }
     $items += @{ Label = "Recursive"; Value = $recursiveDisplay; Hint = "" }
 
-    $skipEffDisplay = if ($global:skipEfficient) { 'Yes' } else { 'No' }
+    $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
     $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
 
-    $vmafDisplay = if ($global:vmafEnabled) { "Enabled" } else { "Disabled" }
-    $vmafHint = if (-not $global:hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file. [Rec: 1-3 Samples, 3-5s Probe, Target 93-95]" }
+    $vmafDisplay = if ($vmafEnabled) { "Enabled" } else { "Disabled" }
+    $vmafHint = if (-not $hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file. [Rec: 1-3 Samples, 3-5s Probe, Target 93-95]" }
     $items += @{ Label = "Advanced VMAF"; Value = $vmafDisplay; Hint = $vmafHint }
 
     $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "" }
 
-    if ($global:vmafEnabled) {
-        $fallbackDisplay = if ($global:vmafFallback) { "Yes" } else { "No" }
-        $items += @{ Label = "Target VMAF"; Value = $global:vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
+    if ($vmafEnabled) {
+        $fallbackDisplay = if ($vmafFallback) { "Yes" } else { "No" }
+        $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
         $items += @{ Label = "Encode with Max VMAF as Fallback"; Value = $fallbackDisplay; Hint = "Encode at optimal CQ even if Target VMAF is unreachable." }
-        $items += @{ Label = "Min Ceiling"; Value = $global:vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
-        $items += @{ Label = "CQ Range"; Value = "$($global:vmafMinCQ) to $($global:vmafMaxCQ)"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
-        $items += @{ Label = "Search Step"; Value = "$($global:vmafStep) points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
-        $items += @{ Label = "VMAF Samples"; Value = $global:vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
-        $items += @{ Label = "Probe Duration"; Value = "$($global:vmafSampleDuration) sec"; Hint = "Seconds Per Sample. Recommended: 3-5s. Longer = Better Accuracy, Slower Encoding." }
+        $items += @{ Label = "Min Ceiling"; Value = $vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
+        $items += @{ Label = "CQ Range"; Value = "$vmafMinCQ to $vmafMaxCQ"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
+        $items += @{ Label = "Search Step"; Value = "$vmafStep points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
+        $items += @{ Label = "VMAF Samples"; Value = $vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
+        $items += @{ Label = "Probe Duration"; Value = "$vmafSampleDuration sec"; Hint = "Seconds Per Sample. Recommended: 3-5s. Longer = Better Accuracy, Slower Encoding." }
     } else {
         $qHint = switch -regex ($activeEnc.Codec) {
             "nvenc" { "Recommended: 23,26,29 (CQ)" }
@@ -855,7 +845,7 @@ while ($runningMenu) {
             "libx265"   { "Recommended: 24,28,32 (CRF)" }
             Default { "Recommended: 23-30" }
         }
-        $items += @{ Label = "Quality"; Value = $global:quality; Hint = $qHint }
+        $items += @{ Label = "Quality"; Value = $quality; Hint = $qHint }
 
         $pHint = switch -regex ($activeEnc.Codec) {
             "nvenc" { "Options: p1 to p7 (p5=default, p7=slowest)" }
@@ -863,16 +853,16 @@ while ($runningMenu) {
             "libx265"   { "Options: ultrafast to placebo (slow=recommended)" }
             Default { "Enter encoder-specific preset" }
         }
-        $presetDisplay = if ($global:preset) { $global:preset } else { 'None' }
+        $presetDisplay = if ($preset) { $preset } else { 'None' }
         $items += @{ Label = "Preset"; Value = $presetDisplay; Hint = $pHint }
     }
 
-    $items += @{ Label = "Audio Action"; Value = $global:audioAction; Hint = "" }
-    $items += @{ Label = "Container"; Value = $global:container; Hint = "" }
+    $items += @{ Label = "Audio Action"; Value = $audioAction; Hint = "" }
+    $items += @{ Label = "Container"; Value = $container; Hint = "" }
 
-    $items += @{ Label = "Success Action"; Value = $global:onSuccessAction; Hint = "What to do if optimization succeeds" }
+    $items += @{ Label = "Success Action"; Value = $onSuccessAction; Hint = "What to do if optimization succeeds" }
 
-    $unoptDisplay = if ($global:unoptAction -match "Custom" -and $global:unoptCustomFolder) { "Custom ($($global:unoptCustomFolder))" } else { $global:unoptAction }
+    $unoptDisplay = if ($unoptAction -match "Custom" -and $unoptCustomFolder) { "Custom ($unoptCustomFolder)" } else { $unoptAction }
     $items += @{ Label = "Failed Action"; Value = $unoptDisplay; Hint = "What to do if optimization fails" }
 
     $startIndex = $items.Count
@@ -924,15 +914,10 @@ while ($runningMenu) {
                         else { $global:preset = $currentPresets[0] }
                     }
                 }
-                "Target VMAF" {
-                    $parts = @($global:vmafTarget -split ',')
-                    if ($parts.Count -le 1) {
-                        $firstVal = [double]$parts[0]
-                        $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))"
-                    }
+                "Target VMAF" { 
+                    $firstVal = [double](($global:vmafTarget -split ',')[0])
+                    $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))" 
                 }
-                "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
-                "Min Ceiling" { $global:vmafMinCeiling = [math]::Max(0, $global:vmafMinCeiling - 1) }
                 "CQ Range" { $global:vmafMinCQ = [math]::Max(0, $global:vmafMinCQ - 1) }
                 "Search Step" {
                     $idx = [array]::IndexOf($global:stepOptions, $global:vmafStep)
@@ -995,15 +980,10 @@ while ($runningMenu) {
                         else { $global:preset = $currentPresets[0] }
                     }
                 }
-                "Target VMAF" {
-                    $parts = @($global:vmafTarget -split ',')
-                    if ($parts.Count -le 1) {
-                        $firstVal = [double]$parts[0]
-                        $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))"
-                    }
+                "Target VMAF" { 
+                    $firstVal = [double](($global:vmafTarget -split ',')[0])
+                    $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))" 
                 }
-                "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
-                "Min Ceiling" { $global:vmafMinCeiling = [math]::Min(100, $global:vmafMinCeiling + 1) }
                 "CQ Range" { $global:vmafMinCQ = [math]::Min($global:vmafMaxCQ - 1, $global:vmafMinCQ + 1) }
                 "Search Step" {
                     $idx = [array]::IndexOf($global:stepOptions, $global:vmafStep)
@@ -1082,12 +1062,8 @@ while ($runningMenu) {
                     "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
                     "Min Ceiling" {
                         Write-Host "`n"
-                        $newCeil = Read-Host "Enter Min VMAF Ceiling (0-100, e.g. 85)"
-                        if ($newCeil -match '^\d+\.?\d*$') {
-                            $val = [double]$newCeil
-                            if ($val -ge 0 -and $val -le 100) { $global:vmafMinCeiling = $val }
-                            else { Write-Host "Value must be between 0 and 100!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
-                        } else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                        $newCeil = Read-Host "Enter Min VMAF Ceiling (e.g. 85)"
+                        if ($newCeil -as [double] -and $newCeil -ge 0 -and $newCeil -le 100) { $global:vmafMinCeiling = [double]$newCeil }
                     }
                     "Quality" {
                         Write-Host "`n"
@@ -1562,4 +1538,3 @@ if ($totalFiles -eq 0) {
 }
 
 Write-Host ""
-
