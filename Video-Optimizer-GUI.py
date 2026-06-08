@@ -1,6 +1,6 @@
 import os
 import sys
-# Version: 3.0.0
+# Version: 3.0.1
 import json
 import time
 import uuid
@@ -590,37 +590,68 @@ class VideoOptimizerEngine:
                 self.log(f"[WARN] Cached absolute Quality ceiling hit. Max achievable VMAF ({max_achievable_vmaf:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
                 res['Msg'] = 'Max VMAF < Min VMAF'
             else:
+                attempted_cqs = set()
                 for target in vmaf_ladder:
                     if self.stop_requested: break
                     
+                    display_target = str(target)
                     if target > max_achievable_vmaf + 0.5:
-                        self.log(f"[SKIP] Skipping VMAF Target {target} (Ceiling is {max_achievable_vmaf:.1f})")
-                        continue
-                    
-                    if max_vmaf_cq is not None and abs(target - max_achievable_vmaf) <= 0.5:
-                        self.log(f"[PROBE] Target {target} is close to known ceiling {max_achievable_vmaf:.1f}. Using CQ {max_vmaf_cq}.")
-                        best_cq = max_vmaf_cq
-                        res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
-                    else:
-                        best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
-                        res['FinalVmaf'] = f"{best_score_val:.1f}"
+                        if not config.get('VmafFallbackEnabled', False):
+                            self.log(f"[SKIP] Skipping VMAF Target {target} (Ceiling is {max_achievable_vmaf:.1f})")
+                            continue
                         
-                        if max_score_val < min_ceiling:
-                            self.log(f"[WARN] Absolute Quality ceiling hit. Max achievable VMAF ({max_score_val:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
-                            res['Msg'] = 'Max VMAF < Min VMAF'
-                            break
-                        
-                        if max_score_val < target - 0.5:
+                        display_target = f"{max_achievable_vmaf:.1f} (Max VMAF)"
+                        if max_vmaf_cq is not None:
+                            self.log(f"[PROBE] Target {target} exceeds ceiling {max_achievable_vmaf:.1f}. Fallback Enabled: using CQ {max_vmaf_cq}.")
+                            best_cq = max_vmaf_cq
+                            res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
+                        else:
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
+                            res['FinalVmaf'] = f"{best_score_val:.1f}"
+                            
+                            if max_score_val < min_ceiling:
+                                self.log(f"[WARN] Absolute Quality ceiling hit. Max achievable VMAF ({max_score_val:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
+                                res['Msg'] = 'Max VMAF < Min VMAF'
+                                break
+                            
                             max_achievable_vmaf = max_score_val
                             max_vmaf_cq = best_cq
-                            if config.get('VmafFallbackEnabled', False):
+                            display_target = f"{max_achievable_vmaf:.1f} (Max VMAF)"
+                            
+                            if max_score_val < target - 0.5:
                                 self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Fallback Enabled: using CQ {best_cq}.")
                                 res['FinalVmaf'] = f"{max_score_val:.1f}"
-                            else:
-                                self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping target encode.")
-                                continue
+                    else:
+                        if max_vmaf_cq is not None and abs(target - max_achievable_vmaf) <= 0.5:
+                            self.log(f"[PROBE] Target {target} is close to known ceiling {max_achievable_vmaf:.1f}. Using CQ {max_vmaf_cq}.")
+                            best_cq = max_vmaf_cq
+                            res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
+                        else:
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
+                            res['FinalVmaf'] = f"{best_score_val:.1f}"
+                            
+                            if max_score_val < min_ceiling:
+                                self.log(f"[WARN] Absolute Quality ceiling hit. Max achievable VMAF ({max_score_val:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
+                                res['Msg'] = 'Max VMAF < Min VMAF'
+                                break
+                            
+                            if max_score_val < target - 0.5:
+                                max_achievable_vmaf = max_score_val
+                                max_vmaf_cq = best_cq
+                                if config.get('VmafFallbackEnabled', False):
+                                    self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Fallback Enabled: using CQ {best_cq}.")
+                                    res['FinalVmaf'] = f"{max_score_val:.1f}"
+                                    display_target = f"{max_score_val:.1f} (Max VMAF)"
+                                else:
+                                    self.log(f"[WARN] Quality ceiling hit. Max achievable VMAF: {max_score_val:.1f} (Target: {target}). Skipping target encode.")
+                                    continue
                     
-                    self.log(f"[ENCODE] Running final encode (VMAF Target: {target}, CQ: {best_cq})...")
+                    if best_cq in attempted_cqs:
+                        self.log(f"[SKIP] CQ {best_cq} has already been attempted for this file. Skipping.")
+                        continue
+                    attempted_cqs.add(best_cq)
+                    
+                    self.log(f"[ENCODE] Running final encode (VMAF Target: {display_target}, CQ: {best_cq})...")
                     success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, duration)
                     
                     if success and temp_out.exists():
@@ -630,7 +661,7 @@ class VideoOptimizerEngine:
                             break
                         else:
                             if temp_out.exists(): temp_out.unlink()
-                            self.log(f"[FAIL] VMAF Target {target} yielded larger file or failed validation.")
+                            self.log(f"[FAIL] VMAF Target {display_target} yielded larger file or failed validation.")
                     else:
                         if temp_out.exists(): temp_out.unlink()
                         self.log(f"[FAIL] Encoding failed for VMAF Target {target}.")
@@ -789,7 +820,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro v3.0.0")
+        self.title("Ultimate Video Optimizer Pro v3.0.1")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(

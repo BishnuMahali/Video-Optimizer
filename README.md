@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.0.0 (Ultimate VMAF Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.0.1 (Ultimate VMAF Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -8,7 +8,7 @@ A **professional-grade, hardware-accelerated video optimization suite** featurin
 
 ---
 
-## 🚀 The Ultimate Upgrade (v3.0.0)
+## 🚀 The Ultimate Upgrade (v3.0.1)
 
 This major release unifies both Python and PowerShell codebases under a single, highly precise visual-seeking architecture, yielding up to **300% faster VMAF seeks** and absolute prevention of size-wasting quality overshoots.
 

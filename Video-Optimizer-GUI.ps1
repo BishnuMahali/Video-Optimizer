@@ -1,5 +1,5 @@
 # Ultimate Video Optimizer Pro (WPF Edition)
-# Version: 3.0.0
+# Version: 3.0.1
 # MIT License | Copyright (c) 2026 Bishnu Mahali
 
 Add-Type -AssemblyName PresentationFramework
@@ -29,7 +29,7 @@ $Theme = if ($CurrentTheme -eq "Dark") {
 $xaml_str = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ultimate Video Optimizer Pro v3.0.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+        Title="Ultimate Video Optimizer Pro v3.0.1" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
             <Grid>
@@ -422,16 +422,23 @@ $btnStart.Add_Click({
                     }
                     
                     $vmafLoopSuccess = $false
+                    $attemptedCqs = @{}
                     foreach ($target in $vmafLadder) {
                         if ($stopSignal[0]) { break }
                         
-                        if ($target -gt $maxAchievableVmaf + 0.5) {
+                        $displayTarget = "$target"
+                        if ($target -gt $maxAchievableVmaf + 0.5 -and -not $config.VmafFallbackEnabled) {
                             Write-Output @{ Type="Log"; Msg="[SKIP] Skipping VMAF Target $target (Ceiling is $([math]::Round($maxAchievableVmaf,1)))" }
                             continue
                         }
                         
-                        if ($maxVmafCq -ne $null -and [math]::Abs($target - $maxAchievableVmaf) -le 0.5) {
-                            Write-Output @{ Type="Log"; Msg="[PROBE] Target $target is close to known ceiling $([math]::Round($maxAchievableVmaf,1)). Using CQ $maxVmafCq." }
+                        if ($maxVmafCq -ne $null -and ($target -gt $maxAchievableVmaf + 0.5 -or [math]::Abs($target - $maxAchievableVmaf) -le 0.5)) {
+                            if ($target -gt $maxAchievableVmaf + 0.5) {
+                                Write-Output @{ Type="Log"; Msg="[PROBE] Target $target exceeds ceiling $([math]::Round($maxAchievableVmaf,1)). Fallback Enabled: using CQ $maxVmafCq." }
+                                $displayTarget = "$([math]::Round($maxAchievableVmaf,1)) (Max VMAF)"
+                            } else {
+                                Write-Output @{ Type="Log"; Msg="[PROBE] Target $target is close to known ceiling $([math]::Round($maxAchievableVmaf,1)). Using CQ $maxVmafCq." }
+                            }
                             $bestCQ = $maxVmafCq
                             $res.FinalVmaf = "$([math]::Round($maxAchievableVmaf,1))"
                         } else {
@@ -759,6 +766,7 @@ $btnStart.Add_Click({
                                 if ($config.VmafFallbackEnabled) {
                                     Write-Output @{ Type="Log"; Msg="[WARN] Quality ceiling hit. Max achievable VMAF: $([math]::Round($maxScore,1)) (Target: $target). Fallback Enabled: using CQ $bestCQ." }
                                     $res.FinalVmaf = "$([math]::Round($maxScore,1))"
+                                    $displayTarget = "$([math]::Round($maxScore,1)) (Max VMAF)"
                                 } else {
                                     Write-Output @{ Type="Log"; Msg="[WARN] Quality ceiling hit. Max achievable VMAF: $([math]::Round($maxScore,1)) (Target: $target). Skipping target encode." }
                                     continue
@@ -766,7 +774,13 @@ $btnStart.Add_Click({
                             }
                         }
                         
-                        Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (VMAF Target: $target, CQ: $bestCQ)..." }
+                        if ($attemptedCqs.ContainsKey($bestCQ)) {
+                            Write-Output @{ Type="Log"; Msg="[SKIP] CQ $bestCQ has already been attempted for this file. Skipping." }
+                            continue
+                        }
+                        $attemptedCqs[$bestCQ] = $true
+
+                        Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
                         $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
                         if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
                         $ffArgs += $target_audio_args

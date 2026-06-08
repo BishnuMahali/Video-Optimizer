@@ -1,5 +1,5 @@
 # Ultimate Video Optimizer
-# Version: 3.0.0
+# Version: 3.0.1
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.
@@ -1345,11 +1345,19 @@ if ($totalFiles -eq 0) {
             }
 
             if (-not $unoptimizable) {
+                $attemptedCqs = @{}
                 foreach ($currentTarget in $vmafTargetsToTry) {
                     if ($global:vmafEnabled) {
-                        if ($null -ne $maxVmafCq -and $currentTarget -gt $maxAchievableVmaf - 0.5) {
+                        if ($null -ne $maxVmafCq -and $currentTarget -gt $maxAchievableVmaf - 0.5 -and -not $global:vmafFallback) {
                             Write-Host "  $($S.Bullet) Target $currentTarget exceeds known ceiling $([math]::Round($maxAchievableVmaf,1)). Skipping target." -ForegroundColor DarkGray
                             continue
+                        }
+                        
+                        if ($null -ne $maxVmafCq -and $currentTarget -gt $maxAchievableVmaf - 0.5) {
+                            Write-Host "  $($S.Bullet) Target $currentTarget exceeds known ceiling $([math]::Round($maxAchievableVmaf,1)). Fallback Enabled: Using CQ $maxVmafCq." -ForegroundColor Yellow
+                            $optimalCq = $maxVmafCq
+                            $lastBestScoreVal = $maxAchievableVmaf
+                            $activeQualityList = @($optimalCq)
                         } else {
                             Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
                             $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature
@@ -1374,7 +1382,13 @@ if ($totalFiles -eq 0) {
                             }
 
                             $activeQualityList = @($optimalCq)
-                        }                
+                        }
+                        
+                        if ($attemptedCqs.ContainsKey($optimalCq)) {
+                            Write-Host "  $($S.Bullet) CQ $optimalCq has already been attempted for this file. Skipping." -ForegroundColor Yellow
+                            continue
+                        }
+                        $attemptedCqs[$optimalCq] = $true
                     } else {
                         $activeQualityList = $qualityList
                     }
