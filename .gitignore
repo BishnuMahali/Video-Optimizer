@@ -1,4 +1,4 @@
-﻿LOGS/
+LOGS/
 TEST/
 SNAPSHOT/
 *.md
@@ -8,3 +8,4 @@ __pycache__/
 BETA/
 ALPHA/
 .antigravitycli/
+graphify-out/
