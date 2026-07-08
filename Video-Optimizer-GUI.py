@@ -148,6 +148,8 @@ class VideoOptimizerEngine:
             ref_samples = []
             cleanup_refs = True
         try:
+            temp_dir = Path(os.environ.get('TEMP', '.'))
+            uid = str(uuid.uuid4())[:8]
             best_cq = 26
             best_score = 0.0
             max_score = 0.0
@@ -215,9 +217,6 @@ class VideoOptimizerEngine:
                     if duration is None:
                         duration = 0.0
                     sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
-
-                temp_dir = Path(os.environ.get('TEMP', '.'))
-                uid = str(uuid.uuid4())[:8]
 
                 self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
                 for idx, sp in enumerate(sample_points):
