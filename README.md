@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.1.0 (Ultimate VMAF Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.1.1 (Performance & Speed Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -8,11 +8,16 @@ A **professional-grade, hardware-accelerated video optimization suite** featurin
 
 ---
 
-## 🚀 The Ultimate Upgrade (v3.1.0)
+## 🚀 Performance & Speed Upgrade (v3.1.1)
 
-This major release unifies both Python and PowerShell codebases under a single, highly precise visual-seeking architecture, introducing **VMAF Quick Test mode**, **live encoding metrics**, and **UI/UX refinements** across all platforms.
+This release introduces major under-the-hood optimization and speed enhancements, targeting multi-thread CPU efficiency and Disk I/O reduction during the VMAF search phase.
 
-### 🌟 New in v3.1.0:
+### 🌟 New in v3.1.1:
+- **Single-Pass Reference Sample Cache:** Moves VMAF reference sample extraction out of the inner search loop to a single-pass phase per file. Reference segments are extracted exactly once and shared across multiple targets in the VMAF ladder or fallback retries, dramatically reducing disk write overhead and processing duration.
+- **Logical Core Scaling:** Replaces the conservative VMAF thread cap of 4 threads with a `Cores - 2` thread allocation strategy, enabling high-core CPUs (e.g. 12, 16, 24 cores) to compute VMAF scores up to 5x faster by fully utilizing processor capability without locking up GUI/OS responsiveness.
+- **HW-Accelerated Transcode Probing:** Automatically applies hardware-accelerated decode flags (`-hwaccel`) during VMAF quality probing to further reduce CPU bottlenecking on GPU-bound runs.
+
+### 🚀 Previous Release Features (v3.1.0):
 - **Live FFmpeg Encoding Metrics:** Real-time extraction of `Speed` (e.g., `1.4x`) and `FPS` values from the FFmpeg progress stream, computing a dynamic, real-time `ETA` progress string next to the progress bar in both Python and WPF GUIs.
 - **Dynamic WPF Row Color-Coding:** File list rows in the WPF GUI are dynamically color-coded based on status (Green for Done, Cyan for In Progress, Gold for Quick Test Skips, and Red for Failures).
 - **Interactive CLI TUI Menu Upgrades:** Re-structured menu layouts into sub-menus to solve vertical terminal space issues. Replaced selection text prefixes with a high-contrast reverse-color Cyan bar highlight. Blocked Left/Right arrow value modification on comma-separated list values to prevent overwrites.

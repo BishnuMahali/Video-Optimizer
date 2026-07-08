@@ -1,5 +1,5 @@
-﻿# Ultimate Video Optimizer Pro (WPF Edition)
-# Version: 3.1.0
+# Ultimate Video Optimizer Pro (WPF Edition)
+# Version: 3.1.1
 # MIT License | Copyright (c) 2026 Bishnu Mahali
 
 Add-Type -AssemblyName PresentationFramework
@@ -29,7 +29,7 @@ $Theme = if ($CurrentTheme -eq "Dark") {
 $xaml_str = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ultimate Video Optimizer Pro v3.1.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+        Title="Ultimate Video Optimizer Pro v3.1.1" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
             <Grid>
@@ -502,6 +502,36 @@ $btnStart.Add_Click({
                         continue
                     }
                     
+                    # Pre-extract VMAF reference sample segments exactly once for this file
+                    $refSamples = @()
+                    if ($maxAchievableVmaf -ge $minCeiling) {
+                        $samplePoints = if($config.VmafSamples -eq 1){ @($testDuration/2) } else { 1..$config.VmafSamples | ForEach-Object { ($testDuration/($config.VmafSamples+1))*$_ } }
+                        Write-Output @{ Type="Log"; Msg="[PROBE] Pre-extracting $($samplePoints.Count) reference sample segments..." }
+                        
+                        $hwDecodeArgs = @()
+                        if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                        elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                        elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                        
+                        try {
+                            for ($sIdx = 0; $sIdx -lt $samplePoints.Count; $sIdx++) {
+                                if ($stopSignal[0]) { break }
+                                $sp = $samplePoints[$sIdx]
+                                $sampleSrc = Join-Path $config.TempDir "v_s_ref_${sIdx}_${uid}.mkv"
+                                
+                                $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$sp", "-t", "$($config.VmafDur)", "-i", "$testPath", "-c:v", "copy", "-an", "$sampleSrc")
+                                $p = Start-Process -FilePath "ffmpeg" -ArgumentList $extractArgs -NoNewWindow -Wait -PassThru
+                                if ($p.ExitCode -eq 0 -and (Test-Path $sampleSrc)) {
+                                    $refSamples += $sampleSrc
+                                } else {
+                                    Write-Output @{ Type="Log"; Msg="[WARN] Failed to extract sample segment at $sp" }
+                                }
+                            }
+                        } catch {
+                            Write-Output @{ Type="Log"; Msg="[WARN] Reference extraction failed: $_" }
+                        }
+                    }
+
                     $vmafLoopSuccess = $false
                     $attemptedCqs = @{}
                     $totalTargetsChecked = 0
@@ -526,32 +556,10 @@ $btnStart.Add_Click({
                             $res.FinalVmaf = "$([math]::Round($maxAchievableVmaf,1))"
                         } else {
                             Write-Output @{ Type="Log"; Msg="[PROBE] Starting VMAF search (Target: $target) for: $($f.Name)" }
-                            $samplePoints = if($config.VmafSamples -eq 1){ @($testDuration/2) } else { 1..$config.VmafSamples | ForEach-Object { ($testDuration/($config.VmafSamples+1))*$_ } }
-                            
-                            # Pre-extract reference sample segments once
-                            Write-Output @{ Type="Log"; Msg="[PROBE] Pre-extracting $($samplePoints.Count) reference sample segments..." }
-                            $refSamples = @()
-                            $hwDecodeArgs = @()
-                            if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
-                            elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
-                            elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
-
-                            try {
-                                for ($sIdx = 0; $sIdx -lt $samplePoints.Count; $sIdx++) {
-                                    if ($stopSignal[0]) { break }
-                                    $sp = $samplePoints[$sIdx]
-                                    $sampleSrc = Join-Path $config.TempDir "v_s_ref_${sIdx}_${uid}.mkv"
-                                    
-                                    $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$sp", "-t", "$($config.VmafDur)", "-i", "$testPath", "-c:v", "copy", "-an", "$sampleSrc")
-                                    $p = Start-Process -FilePath "ffmpeg" -ArgumentList $extractArgs -NoNewWindow -Wait -PassThru
-                                    if ($p.ExitCode -eq 0 -and (Test-Path $sampleSrc)) {
-                                        $refSamples += $sampleSrc
-                                    } else {
-                                        Write-Output @{ Type="Log"; Msg="[WARN] Failed to extract sample segment at $sp" }
-                                    }
-                                }
-                                
-                                if ($stopSignal[0]) { break }
+                            if ($refSamples.Count -eq 0) {
+                                Write-Output @{ Type="Log"; Msg="[ERROR] Reference sample extraction failed." }
+                                continue
+                            }
                                 
                                  $bestCQ = 26
                                  $bestScore = 0
@@ -564,8 +572,8 @@ $btnStart.Add_Click({
                                      }
                                  }
                                  
-                                 $cores = [System.Environment]::ProcessorCount
-                                 $threads = [math]::max(1, [math]::min(4, [math]::floor($cores / 2)))
+                                  $cores = [System.Environment]::ProcessorCount
+                                  $threads = [math]::max(1, $cores - 2)
 
                                  # --- Local helper: probe a single CQ value ---
                                  $probeSingleCq = {
@@ -1081,6 +1089,11 @@ $btnStart.Add_Click({
             }            
             if ($clipPath -and (Test-Path $clipPath)) {
                 try { Remove-Item $clipPath -Force } catch {}
+            }
+            if ($null -ne $refSamples) {
+                foreach ($s in $refSamples) {
+                    if (Test-Path $s) { try { Remove-Item $s -Force } catch {} }
+                }
             }
             if ($stopSignal[0]) { 
                 Write-Output @{ Index=$idx; Success=$false; Msg="Stopped"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }

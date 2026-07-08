@@ -1,6 +1,6 @@
-﻿import os
+import os
 import sys
-# Version: 3.1.0
+# Version: 3.1.1
 import json
 import time
 import uuid
@@ -130,7 +130,7 @@ class VideoOptimizerEngine:
             return "unknown"
 
     def calculate_vmaf(self, reference, distorted):
-        threads = max(1, min(4, os.cpu_count() // 2))
+        threads = max(1, os.cpu_count() - 2)
         args = ['ffmpeg', '-i', str(distorted), '-i', str(reference), '-filter_complex', f'libvmaf=n_threads={threads}', '-f', 'null', '-']
         try:
             result = subprocess.run(args, capture_output=True, text=True)
@@ -142,8 +142,11 @@ class VideoOptimizerEngine:
             self.log(f"[FAIL] VMAF calculation failed: {e}")
         return None
 
-    def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None):
-        ref_samples = []
+    def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None, ref_samples=None):
+        cleanup_refs = False
+        if ref_samples is None:
+            ref_samples = []
+            cleanup_refs = True
         try:
             best_cq = 26
             best_score = 0.0
@@ -205,24 +208,25 @@ class VideoOptimizerEngine:
                         self.log(f"[PROBE] Found ideal cached match: CQ {closest_cq} -> VMAF {closest_score:.2f} (Target: {target_vmaf})")
                         return closest_cq, closest_score, probe_cache.get('MaxAchievableVmaf', 0), probe_cache.get('MaxVmafCq', 26)
 
-            if samples_count == 1:
-                sample_points = [duration / 2]
-            else:
-                if duration is None:
-                    duration = 0.0
-                sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
+            if cleanup_refs:
+                if samples_count == 1:
+                    sample_points = [duration / 2]
+                else:
+                    if duration is None:
+                        duration = 0.0
+                    sample_points = [(duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
 
-            temp_dir = Path(os.environ.get('TEMP', '.'))
-            uid = str(uuid.uuid4())[:8]
+                temp_dir = Path(os.environ.get('TEMP', '.'))
+                uid = str(uuid.uuid4())[:8]
 
-            self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
-            for idx, sp in enumerate(sample_points):
-                if self.stop_requested:
-                    break
-                sample_src = temp_dir / f"v_s_ref_{idx}_{uid}.mkv"
-                extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
-                subprocess.run(extract_args, check=True)
-                ref_samples.append(sample_src)
+                self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
+                for idx, sp in enumerate(sample_points):
+                    if self.stop_requested:
+                        break
+                    sample_src = temp_dir / f"v_s_ref_{idx}_{uid}.mkv"
+                    extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(file_path), '-c:v', 'copy', '-an', str(sample_src)]
+                    subprocess.run(extract_args, check=True)
+                    ref_samples.append(sample_src)
 
             if self.stop_requested:
                 return 26, 0.0, 0.0, 26
@@ -460,12 +464,13 @@ class VideoOptimizerEngine:
             self.log(traceback.format_exc())
             return 26, 0.0, 0.0, 26
         finally:
-            for sample_src in ref_samples:
-                try:
-                    if sample_src.exists():
-                        sample_src.unlink()
-                except:
-                    pass
+            if cleanup_refs:
+                for sample_src in ref_samples:
+                    try:
+                        if sample_src.exists():
+                            sample_src.unlink()
+                    except:
+                        pass
 
     def run_ffmpeg_with_progress(self, args, file_index, total_files, file_duration):
         cmd = ['ffmpeg', '-progress', 'pipe:1'] + args
@@ -654,6 +659,34 @@ class VideoOptimizerEngine:
                 self.log(f"[WARN] Cached absolute Quality ceiling hit. Max achievable VMAF ({max_achievable_vmaf:.1f}) is below minimum floor ({min_ceiling}). Skipping file entirely.")
                 res['Msg'] = 'Max VMAF < Min VMAF'
             else:
+                # Pre-extract reference samples exactly once for this file
+                ref_samples = []
+                samples_count = config.get('VmafSamples', 3)
+                sample_dur = config.get('VmafDur', 5)
+                test_duration = quick_test_dur if is_clip_extracted else duration
+                
+                if samples_count == 1:
+                    sample_points = [test_duration / 2]
+                else:
+                    if test_duration is None:
+                        test_duration = 0.0
+                    sample_points = [(test_duration / (samples_count + 1)) * i for i in range(1, samples_count + 1)]
+                
+                temp_dir = Path(os.environ.get('TEMP', '.'))
+                uid = str(uuid.uuid4())[:8]
+                
+                self.log(f"[PROBE] Pre-extracting {len(sample_points)} reference sample segments...")
+                for idx, sp in enumerate(sample_points):
+                    if self.stop_requested:
+                        break
+                    sample_src = temp_dir / f"v_s_ref_{idx}_{uid}.mkv"
+                    extract_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(sp), '-t', str(sample_dur), '-i', str(test_file), '-c:v', 'copy', '-an', str(sample_src)]
+                    try:
+                        subprocess.run(extract_args, check=True)
+                        ref_samples.append(sample_src)
+                    except Exception as e:
+                        self.log(f"[WARN] Failed to extract sample segment {idx}: {e}")
+
                 attempted_cqs = set()
                 total_targets_checked = 0
                 quick_test_skips = 0
@@ -672,7 +705,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None, ref_samples=ref_samples)
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -693,7 +726,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None, ref_samples=ref_samples)
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -869,6 +902,15 @@ class VideoOptimizerEngine:
             except:
                 pass
 
+        # Cleanup reference samples
+        if 'ref_samples' in locals() and ref_samples:
+            for sample_src in ref_samples:
+                try:
+                    if sample_src.exists():
+                        sample_src.unlink()
+                except:
+                    pass
+
         return res
 
     def execute_encode(self, file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, file_duration):
@@ -957,7 +999,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro v3.1.0")
+        self.title("Ultimate Video Optimizer Pro v3.1.1")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(

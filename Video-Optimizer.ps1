@@ -1,5 +1,5 @@
-﻿# Ultimate Video Optimizer
-# Version: 3.1.0
+# Ultimate Video Optimizer
+# Version: 3.1.1
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.
@@ -376,7 +376,7 @@ function Get-VmafScore {
 
     $scores = @()
     $cores = [System.Environment]::ProcessorCount
-    $threads = [math]::max(1, [math]::min(4, [math]::floor($cores / 2)))
+    $threads = [math]::max(1, $cores - 2)
     $uid = [guid]::NewGuid().ToString().Substring(0, 8)
     $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
 
@@ -433,10 +433,11 @@ function Find-OptimalCq {
         [double]$TargetVmaf,
         [hashtable]$FullCache,
         [string]$CacheFile,
-        [string]$Signature
+        [string]$Signature,
+        [System.Collections.Generic.List[string]]$RefSamples
     )
 
-    $refSamples = New-Object System.Collections.Generic.List[string]
+    $refSamples = $RefSamples
     $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
 
     try {
@@ -515,20 +516,26 @@ function Find-OptimalCq {
             }
         }
         
-        # 3. Extract reference samples exactly ONCE
-        Write-Host "     [PROBE] Extracting reference samples ($global:vmafSampleCount x $($global:vmafSampleDuration)s)..." -ForegroundColor Gray
-        $uid = [guid]::NewGuid().ToString().Substring(0, 8)
-        for ($sIdx = 0; $sIdx -lt $global:vmafSampleCount; $sIdx++) {
-            $startTime = $samplePoints[$sIdx]
-            $sampleSrc = Join-Path $tempFolder "v_s_ref_${sIdx}_${uid}.mkv"
-            try {
-                $extractArgs = @("-y", "-loglevel", "error", "-ss", "$startTime", "-t", "$global:vmafSampleDuration", "-i", "$InputPath", "-map", "0:v:0", "-an", "-c:v", "copy", "$sampleSrc")
-                & ffmpeg @extractArgs
-                if (Test-Path $sampleSrc) {
-                    $refSamples.Add($sampleSrc)
+        $cleanupRefs = $false
+        if ($null -eq $refSamples -or $refSamples.Count -eq 0) {
+            $refSamples = New-Object System.Collections.Generic.List[string]
+            $cleanupRefs = $true
+            
+            # 3. Extract reference samples exactly ONCE
+            Write-Host "     [PROBE] Extracting reference samples ($global:vmafSampleCount x $($global:vmafSampleDuration)s)..." -ForegroundColor Gray
+            $uid = [guid]::NewGuid().ToString().Substring(0, 8)
+            for ($sIdx = 0; $sIdx -lt $global:vmafSampleCount; $sIdx++) {
+                $startTime = $samplePoints[$sIdx]
+                $sampleSrc = Join-Path $tempFolder "v_s_ref_${sIdx}_${uid}.mkv"
+                try {
+                    $extractArgs = @("-y", "-loglevel", "error", "-ss", "$startTime", "-t", "$global:vmafSampleDuration", "-i", "$InputPath", "-map", "0:v:0", "-an", "-c:v", "copy", "$sampleSrc")
+                    & ffmpeg @extractArgs
+                    if (Test-Path $sampleSrc) {
+                        $refSamples.Add($sampleSrc)
+                    }
+                } catch {
+                    Write-Host "     [WARN] Failed to extract sample segment at $startTime : $_" -ForegroundColor Yellow
                 }
-            } catch {
-                Write-Host "     [WARN] Failed to extract sample segment at $startTime : $_" -ForegroundColor Yellow
             }
         }
         
@@ -781,7 +788,7 @@ function Find-OptimalCq {
         return [PSCustomObject]@{ CQ = 26; Score = 0; MaxScore = 0; MaxScoreCQ = 26 }
     } finally {
         # Clean up ref sample segments
-        if ($null -ne $refSamples) {
+        if ($cleanupRefs -and $null -ne $refSamples) {
             foreach ($s in $refSamples) {
                 if (Test-Path $s) { Remove-Item $s -Force }
             }
@@ -1512,6 +1519,38 @@ if ($totalFiles -eq 0) {
             }
 
             if (-not $unoptimizable) {
+                $refSamples = $null
+                if ($global:vmafEnabled) {
+                    $refSamples = New-Object System.Collections.Generic.List[string]
+                    $testDuration = if ($isClipExtracted) { $quickTestDur } else { $duration }
+                    
+                    $samplePoints = @()
+                    if ($global:vmafSampleCount -eq 1) {
+                        $samplePoints += [math]::Max(0, ($testDuration / 2) - ($global:vmafSampleDuration / 2))
+                    } else {
+                        $step = $testDuration / ($global:vmafSampleCount + 1)
+                        for ($i = 1; $i -le $global:vmafSampleCount; $i++) {
+                            $samplePoints += [math]::Max(0, ($step * $i) - ($global:vmafSampleDuration / 2))
+                        }
+                    }
+                    
+                    Write-Host "     [PROBE] Extracting reference samples ($global:vmafSampleCount x $($global:vmafSampleDuration)s)..." -ForegroundColor Gray
+                    $uid = [guid]::NewGuid().ToString().Substring(0, 8)
+                    for ($sIdx = 0; $sIdx -lt $global:vmafSampleCount; $sIdx++) {
+                        $startTime = $samplePoints[$sIdx]
+                        $sampleSrc = Join-Path $tempFolder "v_s_ref_${sIdx}_${uid}.mkv"
+                        try {
+                            $extractArgs = @("-y", "-loglevel", "error", "-ss", "$startTime", "-t", "$global:vmafSampleDuration", "-i", "$testPath", "-map", "0:v:0", "-an", "-c:v", "copy", "$sampleSrc")
+                            & ffmpeg @extractArgs
+                            if (Test-Path $sampleSrc) {
+                                $refSamples.Add($sampleSrc)
+                            }
+                        } catch {
+                            Write-Host "     [WARN] Failed to extract sample segment at $startTime : $_" -ForegroundColor Yellow
+                        }
+                    }
+                }
+
                 $totalTargetsChecked = 0
                 $quickTestSkips = 0
                 $attemptedCqs = @{}
@@ -1529,7 +1568,7 @@ if ($totalFiles -eq 0) {
                             $activeQualityList = @($optimalCq)
                         } else {
                             Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                            $optimalResult = Find-OptimalCq -InputPath $testPath -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache (if ($isClipExtracted) { $null } else { $unoptimizableCache }) -CacheFile $cacheFile -Signature (if ($isClipExtracted) { $null } else { $fileSignature })
+                            $optimalResult = Find-OptimalCq -InputPath $testPath -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache (if ($isClipExtracted) { $null } else { $unoptimizableCache }) -CacheFile $cacheFile -Signature (if ($isClipExtracted) { $null } else { $fileSignature }) -RefSamples $refSamples
                             $optimalCq = $optimalResult.CQ
                             $lastBestScoreVal = $optimalResult.Score
 
@@ -1788,10 +1827,20 @@ if ($totalFiles -eq 0) {
             if ($clipPath -and (Test-Path -LiteralPath $clipPath)) {
                 try { Remove-Item -LiteralPath $clipPath -Force } catch {}
             }
+            if ($null -ne $refSamples) {
+                foreach ($s in $refSamples) {
+                    if (Test-Path $s) { try { Remove-Item $s -Force } catch {} }
+                }
+            }
         }
     } finally {
         if ($clipPath -and (Test-Path -LiteralPath $clipPath)) { try { Remove-Item -LiteralPath $clipPath -Force } catch {} }
         if ($global:currentTempOutput -and (Test-Path -LiteralPath $global:currentTempOutput)) { Remove-Item -LiteralPath $global:currentTempOutput -Force }
+        if ($null -ne $refSamples) {
+            foreach ($s in $refSamples) {
+                if (Test-Path $s) { try { Remove-Item $s -Force } catch {} }
+            }
+        }
         
         Write-Host "`n [INFO] Process stopped or finished. Generating summary..." -ForegroundColor Yellow
         $totalSavedMB = [math]::Round(($totalInBytes - $totalOutBytes) / 1MB, 2)
