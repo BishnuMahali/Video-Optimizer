@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.0.1 (Ultimate VMAF Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.1.0 (Ultimate VMAF Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -8,11 +8,18 @@ A **professional-grade, hardware-accelerated video optimization suite** featurin
 
 ---
 
-## 🚀 The Ultimate Upgrade (v3.0.1)
+## 🚀 The Ultimate Upgrade (v3.1.0)
 
-This major release unifies both Python and PowerShell codebases under a single, highly precise visual-seeking architecture, yielding up to **300% faster VMAF seeks** and absolute prevention of size-wasting quality overshoots.
+This major release unifies both Python and PowerShell codebases under a single, highly precise visual-seeking architecture, introducing **VMAF Quick Test mode**, **live encoding metrics**, and **UI/UX refinements** across all platforms.
 
-### 🌟 State-of-the-Art Pro Features:
+### 🌟 New in v3.1.0:
+- **Live FFmpeg Encoding Metrics:** Real-time extraction of `Speed` (e.g., `1.4x`) and `FPS` values from the FFmpeg progress stream, computing a dynamic, real-time `ETA` progress string next to the progress bar in both Python and WPF GUIs.
+- **Dynamic WPF Row Color-Coding:** File list rows in the WPF GUI are dynamically color-coded based on status (Green for Done, Cyan for In Progress, Gold for Quick Test Skips, and Red for Failures).
+- **Interactive CLI TUI Menu Upgrades:** Re-structured menu layouts into sub-menus to solve vertical terminal space issues. Replaced selection text prefixes with a high-contrast reverse-color Cyan bar highlight. Blocked Left/Right arrow value modification on comma-separated list values to prevent overwrites.
+- **Traceable Logging:** All intermediate Quick Test trial logs now explicitly include the original video filename instead of random temporary clip names, making log analysis clear and readable.
+- **Smart Fallback Handling:** If all trials fail size verification in Quick Test mode, the status is set to `Skipped (Quick Test)`, and fail actions (quarantine, deletion) are safely bypassed to keep the original file untouched.
+
+### 🌟 State-of-the-Art Pro Features (v3.0.1+):
 - **Two-Stage Plateau-Aware Binary Search (PABS):** Eliminates VMAF overshooting (e.g., defaulting to CQ 1 when intermediate values like CQ 16 yield the same VMAF). Maps unreachable high quality targets exactly to the source's visual ceiling.
 - **Directional Refinement Scan (Stage 2):** Scans the tested quality history, finds the nearest similar CQ in the search direction, and executes a secondary binary search in the interval to perfectly locate the plateau "knee."
 - **Three-Point Plateau Detection:** Analyzes probed CQ trends. If 3 probed CQs have VMAF scores within a `0.05` tolerance, a visual quality plateau is detected, and the search immediately narrows boundaries to the highest efficient CQ on that plateau.
