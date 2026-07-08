@@ -1,5 +1,5 @@
-# Ultimate Video Optimizer Pro (WPF Edition)
-# Version: 3.0.1
+﻿# Ultimate Video Optimizer Pro (WPF Edition)
+# Version: 3.1.0
 # MIT License | Copyright (c) 2026 Bishnu Mahali
 
 Add-Type -AssemblyName PresentationFramework
@@ -18,9 +18,9 @@ function Get-SystemTheme {
 
 $CurrentTheme = Get-SystemTheme
 $Theme = if ($CurrentTheme -eq "Dark") {
-    @{ WindowBg="#1B1F23"; CardBg="#24292E"; TextMain="#E6EDF3"; TextSub="#8C959F"; Border="#30363D"; InputBg="#0D1117"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#000000"; ProgressBg="#30363D"; Hover="#3FB950"; Success="#2DA44E"; Error="#CF222E" }
+    @{ WindowBg="#1B1F23"; CardBg="#24292E"; TextMain="#E6EDF3"; TextSub="#8C959F"; Border="#30363D"; InputBg="#0D1117"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#000000"; ProgressBg="#30363D"; Hover="#3FB950"; Success="#2DA44E"; Error="#CF222E"; Warn="#D4AF37" }
 } else {
-    @{ WindowBg="#F0F2F5"; CardBg="#FFFFFF"; TextMain="#1B1F23"; TextSub="#57606A"; Border="#D0D7DE"; InputBg="#F6F8FA"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#D0D7DE"; ProgressBg="#E1E4E8"; Hover="#1A7F37"; Success="#2DA44E"; Error="#CF222E" }
+    @{ WindowBg="#F0F2F5"; CardBg="#FFFFFF"; TextMain="#1B1F23"; TextSub="#57606A"; Border="#D0D7DE"; InputBg="#F6F8FA"; Primary="#2DA44E"; Accent="#0969DA"; Shadow="#D0D7DE"; ProgressBg="#E1E4E8"; Hover="#1A7F37"; Success="#2DA44E"; Error="#CF222E"; Warn="#B38F00" }
 }
 
 # ==========================================
@@ -29,7 +29,7 @@ $Theme = if ($CurrentTheme -eq "Dark") {
 $xaml_str = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ultimate Video Optimizer Pro v3.0.1" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+        Title="Ultimate Video Optimizer Pro v3.1.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
             <Grid>
@@ -80,7 +80,7 @@ $xaml_str = @"
         
         <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="450"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,20,0"><StackPanel>
-                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkQuickTest" Content="Quick Test Mode" IsChecked="True"/><TextBlock Text="Duration:" Margin="20,0,5,0" VerticalAlignment="Center" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblQuickTestVal" Text="25s" VerticalAlignment="Center" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel><Slider x:Name="sliderQuickTest" Minimum="5" Maximum="60" Value="25" SmallChange="1" LargeChange="5" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,0"/><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardVmaf"><StackPanel><TextBlock Text="2. ADVANCED VMAF TUNING" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><StackPanel Margin="0,0,0,10"><CheckBox x:Name="chkVmafFallback" Content="Encode with Max VMAF as Fallback" IsChecked="True" Margin="0,0,0,6"/><CheckBox x:Name="chkVmafLadder" Content="Enable Stepping Target" IsChecked="False"/></StackPanel><StackPanel x:Name="panelVmafTarget"><Grid Margin="0,0,0,5"><TextBlock Text="Target Quality (VMAF)" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafTarget" Text="93" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmaf" Minimum="70" Maximum="100" Value="93" Margin="0,0,0,15"/></StackPanel><StackPanel x:Name="panelVmafLadder" Visibility="Collapsed" Margin="0,0,0,15"><TextBlock Text="VMAF Target Ladder (Space/Comma Separated)" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><TextBox x:Name="txtVmafLadder" Text="93" Height="30" Margin="0,0,0,5"/></StackPanel><StackPanel Margin="0,0,0,15"><Grid Margin="0,0,0,5"><TextBlock Text="Minimum VMAF Ceiling" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafCeiling" Text="85" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmafCeiling" Minimum="0" Maximum="100" Value="85"/></StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Samples" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboSamples"><ComboBoxItem Content="1 Sample"/><ComboBoxItem Content="3 Samples (Balanced)" IsSelected="True"/><ComboBoxItem Content="5 Samples"/></ComboBox></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Probe Duration" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboProbeDur"><ComboBoxItem Content="3 Seconds"/><ComboBoxItem Content="5 Seconds" IsSelected="True"/><ComboBoxItem Content="10 Seconds"/></ComboBox></StackPanel></Grid></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardManual" Visibility="Collapsed"><StackPanel><TextBlock Text="2. MANUAL QUALITY LADDER" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><TextBox x:Name="txtQualityLadder" Text="23,26,29" Height="30"/><TextBlock Text="Speed Preset" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,15,0,8"/><ComboBox x:Name="comboPreset"/></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="3. AUDIO &amp; POST-PROCESS" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboAudio" Margin="0,0,0,15"><ComboBoxItem Content="Copy (Original)" IsSelected="True"/><ComboBoxItem Content="AAC (128k)"/><ComboBoxItem Content="AAC (192k)"/></ComboBox><TextBlock Text="On Failure" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboOnFail"><ComboBoxItem Content="Move to 'Unoptimizable'" IsSelected="True"/><ComboBoxItem Content="Delete File"/><ComboBoxItem Content="Ignore (Keep Original)"/></ComboBox></StackPanel></Border>
@@ -93,7 +93,7 @@ $xaml_str = @"
                     <Border Style="{StaticResource CardStyle}" Margin="4,0,4,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="EFFICIENCY" FontSize="9" Foreground="$($Theme.Accent)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statEff" Text="0%" FontSize="20" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel></Border>
                     <Border Style="{StaticResource CardStyle}" Margin="8,0,0,0" Padding="12"><StackPanel HorizontalAlignment="Center"><TextBlock Text="VMAF" FontSize="9" Foreground="$($Theme.TextSub)" FontWeight="Bold" HorizontalAlignment="Center"/><TextBlock x:Name="statVmaf" Text="---" FontSize="20" FontWeight="Bold"/></StackPanel></Border>
                 </UniformGrid>
-                <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0"><DataGrid x:Name="dgFiles" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" SelectionMode="Single" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="Filename" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="Old Size" Binding="{Binding OldSize}" Width="80"/><DataGridTextColumn Header="New Size" Binding="{Binding NewSize}" Width="80"/><DataGridTextColumn Header="Saving" Binding="{Binding Saving}" Width="70"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="$($Theme.Success)"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="HorizontalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn><DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/></DataGrid.Columns></DataGrid></Border>
+                <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0"><DataGrid x:Name="dgFiles" AutoGenerateColumns="False" IsReadOnly="True" BorderThickness="0" SelectionMode="Single" CanUserAddRows="False"><DataGrid.Columns><DataGridTextColumn Header="Filename" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="Old Size" Binding="{Binding OldSize}" Width="80"/><DataGridTextColumn Header="New Size" Binding="{Binding NewSize}" Width="80"/><DataGridTextColumn Header="Saving" Binding="{Binding Saving}" Width="70"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="Foreground" Value="$($Theme.Success)"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="HorizontalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn><DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="150"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="VerticalAlignment" Value="Center"/><Style.Triggers><DataTrigger Binding="{Binding Status}" Value="Done"><Setter Property="Foreground" Value="$($Theme.Success)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="In Progress"><Setter Property="Foreground" Value="$($Theme.Accent)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Skipped (Quick Test)"><Setter Property="Foreground" Value="$($Theme.Warn)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Already Efficient"><Setter Property="Foreground" Value="$($Theme.TextSub)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Cached Skip"><Setter Property="Foreground" Value="$($Theme.TextSub)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Stopped"><Setter Property="Foreground" Value="$($Theme.TextSub)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Failed"><Setter Property="Foreground" Value="$($Theme.Error)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Larger than Source"><Setter Property="Foreground" Value="$($Theme.Error)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Max VMAF &lt; Min VMAF"><Setter Property="Foreground" Value="$($Theme.Error)"/></DataTrigger><DataTrigger Binding="{Binding Status}" Value="Path Error"><Setter Property="Foreground" Value="$($Theme.Error)"/></DataTrigger></Style.Triggers></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn></DataGrid.Columns></DataGrid></Border>
                 <Border Grid.Row="2" Background="$($Theme.InputBg)" CornerRadius="8" Padding="12" Margin="0,20,0,0" BorderBrush="$($Theme.Border)" BorderThickness="1"><TextBox x:Name="txtLogs" Background="Transparent" Foreground="$($Theme.TextMain)" BorderThickness="0" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" FontFamily="Consolas" FontSize="11"/></Border>
             </Grid>
         </Grid>
@@ -113,6 +113,7 @@ if ($null -eq $window) { throw "WPF Window failed to load!" }
 
 $txtPath=$window.FindName("txtPath"); $btnBrowse=$window.FindName("btnBrowse"); $chkRecursive=$window.FindName("chkRecursive"); $chkVmaf=$window.FindName("chkVmaf"); $cardVmaf=$window.FindName("cardVmaf"); $cardManual=$window.FindName("cardManual"); $comboEncoder=$window.FindName("comboEncoder"); $comboContainer=$window.FindName("comboContainer"); $sliderVmaf=$window.FindName("sliderVmaf"); $lblVmafTarget=$window.FindName("lblVmafTarget"); $comboSamples=$window.FindName("comboSamples"); $comboProbeDur=$window.FindName("comboProbeDur"); $txtQualityLadder=$window.FindName("txtQualityLadder"); $comboPreset=$window.FindName("comboPreset"); $comboAudio=$window.FindName("comboAudio"); $comboOnFail=$window.FindName("comboOnFail"); $chkResume=$window.FindName("chkResume"); $chkCache=$window.FindName("chkCache"); $chkLog=$window.FindName("chkLog"); $statFiles=$window.FindName("statFiles"); $statSaved=$window.FindName("statSaved"); $statEff=$window.FindName("statEff"); $statVmaf=$window.FindName("statVmaf"); $dgFiles=$window.FindName("dgFiles"); $txtLogs=$window.FindName("txtLogs"); $progressMain=$window.FindName("progressMain"); $lblStatus=$window.FindName("lblStatus"); $btnStart=$window.FindName("btnStart"); $btnStop=$window.FindName("btnStop")
 $chkVmafFallback=$window.FindName("chkVmafFallback"); $chkVmafLadder=$window.FindName("chkVmafLadder"); $panelVmafTarget=$window.FindName("panelVmafTarget"); $panelVmafLadder=$window.FindName("panelVmafLadder"); $txtVmafLadder=$window.FindName("txtVmafLadder"); $sliderVmafCeiling=$window.FindName("sliderVmafCeiling"); $lblVmafCeiling=$window.FindName("lblVmafCeiling")
+$chkQuickTest=$window.FindName("chkQuickTest"); $sliderQuickTest=$window.FindName("sliderQuickTest"); $lblQuickTestVal=$window.FindName("lblQuickTestVal")
 
 $global:logEnabled=$false; $global:logFilePath=""; $global:videoFiles=@(); $global:stopRequested=$false; $global:StopSignal = New-Object 'bool[]' 1; $global:StopSignal[0] = $false
 $knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg')
@@ -207,6 +208,16 @@ $chkVmafLadder.Add_Click({
         $panelVmafLadder.Visibility = "Collapsed"
     }
 })
+$chkQuickTest.Add_Click({
+    if ($chkQuickTest.IsChecked) {
+        $sliderQuickTest.Visibility = "Visible"
+    } else {
+        $sliderQuickTest.Visibility = "Collapsed"
+    }
+})
+$sliderQuickTest.Add_ValueChanged({
+    $lblQuickTestVal.Text = "$([int]$sliderQuickTest.Value)s"
+})
 $comboEncoder.Add_SelectionChanged({ Update-PresetList })
 
 $btnStop.Add_Click({ $global:stopRequested=$true; $btnStop.IsEnabled=$false; Add-Log "[STOP] Cancellation requested. Cleaning up current file..." })
@@ -259,6 +270,8 @@ $btnStart.Add_Click({
         VmafFallbackEnabled=$vmafFallback
         VmafLadderEnabled=[bool]$chkVmafLadder.IsChecked
         VmafLadder=$vmafLadder
+        QuickTestEnabled=[bool]$chkQuickTest.IsChecked
+        QuickTestDuration=[int]$sliderQuickTest.Value
         TempDir=$tempDir
     }
     $global:processedCount=0; $global:totalSavedBytes=0; $global:totalOriginalBytes=0
@@ -287,6 +300,8 @@ $btnStart.Add_Click({
                     
                     $p.Start() | Out-Null
                     
+                    $fps = "---"
+                    $speed = "---"
                     $reader = $p.StandardOutput
                     while (!$reader.EndOfStream -or !$p.HasExited) {
                         if ($stopSignal[0]) {
@@ -295,7 +310,13 @@ $btnStart.Add_Click({
                         }
                         $line = $reader.ReadLine()
                         if ($null -ne $line) {
-                            if ($line -match "out_time_us=(\d+)") {
+                            if ($line -match "^fps=(.*)") {
+                                $fps = $matches[1].Trim()
+                            }
+                            elseif ($line -match "^speed=(.*)") {
+                                $speed = $matches[1].Trim()
+                            }
+                            elseif ($line -match "^out_time_us=(\d+)") {
                                 $us = [double]$matches[1]
                                 $currentSec = $us / 1000000.0
                                 if ($fileDuration -gt 0) {
@@ -308,9 +329,24 @@ $btnStart.Add_Click({
                                     $secFormatted = [math]::Round($currentSec, 1)
                                     $durFormatted = [math]::Round($fileDuration, 1)
                                     
+                                    $etaStr = "---"
+                                    try {
+                                        $speedClean = $speed.Replace('x', '').Trim()
+                                        if ([double]::TryParse($speedClean, [System.Globalization.NumberStyles]::Any, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$speedVal)) {
+                                            if ($speedVal -gt 0) {
+                                                $etaSec = [int](($fileDuration - $currentSec) / $speedVal)
+                                                if ($etaSec -gt 60) {
+                                                    $etaStr = "$([int]($etaSec / 60))m $($etaSec % 60)s"
+                                                } else {
+                                                    $etaStr = "${etaSec}s"
+                                                }
+                                            }
+                                        }
+                                    } catch {}
+                                    
                                     Write-Output @{
                                         Type = "Progress"
-                                        Msg = "Processing: File $($fileIndex + 1)/$totalFiles - ${pctFormatted}% (${secFormatted}s / ${durFormatted}s)"
+                                        Msg = "Processing: File $($fileIndex + 1)/$totalFiles - ${pctFormatted}% | Speed: $speed | FPS: $fps | ETA: $etaStr"
                                         Pct = $overallPercent
                                     }
                                 }
@@ -355,6 +391,51 @@ $btnStart.Add_Click({
                 $durIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
                 if($durIn -match "^\d+(\.\d+)?$"){ $duration=[double]$durIn } else { $duration=60 }
                 
+                # Quick Test Mode Setup
+                $quickTest = $config.QuickTestEnabled
+                $quickTestDur = $config.QuickTestDuration
+                
+                # Enforce minimum duration dynamically based on VMAF settings
+                $vmafEnabled = $config.VmafEnabled
+                $vmafSamples = if ($config.VmafSamples) { [int]$config.VmafSamples } else { 3 }
+                $vmafDur = if ($config.VmafDur) { [int]$config.VmafDur } else { 5 }
+                $minNeeded = if ($vmafEnabled) { $vmafSamples * $vmafDur } else { 5 }
+                if ($quickTest -and $quickTestDur -lt $minNeeded) {
+                    $quickTestDur = $minNeeded
+                }
+                
+                $isClipExtracted = $false
+                $clipPath = $null
+                
+                if ($quickTest -and $duration -and $duration -gt ($quickTestDur * 2)) {
+                    Write-Output @{ Type="Log"; Msg="[QUICK TEST] Preparing $($quickTestDur)s representative clip for '$($f.Name)'..." }
+                    $startTime = [math]::max(0.0, $duration * 0.1)
+                    
+                    $clipPath = Join-Path $config.TempDir "clip_src_${uid}$($f.Extension)"
+                    
+                    $hwDecodeArgs = @()
+                    if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                    elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                    elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                    
+                    $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$startTime", "-t", "$quickTestDur", "-i", "$($f.FullName)", "-c", "copy", "$clipPath")
+                    
+                    $p = Start-Process -FilePath "ffmpeg" -ArgumentList $extractArgs -NoNewWindow -Wait -PassThru
+                    if ($p.ExitCode -eq 0 -and (Test-Path $clipPath)) {
+                        $isClipExtracted = $true
+                        $clipSize = (Get-Item $clipPath).Length
+                        $clipSizeDisplay = if ($clipSize -gt 1MB) { "$((($clipSize)/1MB).ToString('F2')) MB" } else { "$((($clipSize)/1KB).ToString('F2')) KB" }
+                        Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip extracted for '$($f.Name)': $(Split-Path $clipPath -Leaf) ($clipSizeDisplay)" }
+                    } else {
+                        Write-Output @{ Type="Log"; Msg="[WARN] Extracted clip is empty or stream copy failed. Falling back to full video optimization." }
+                        if (Test-Path $clipPath) { Remove-Item $clipPath -Force }
+                        $clipPath = $null
+                    }
+                }
+                
+                $testPath = if ($isClipExtracted) { $clipPath } else { $f.FullName }
+                $testDuration = if ($isClipExtracted) { $quickTestDur } else { $duration }
+
                 # Audio codec check
                 $source_audio = (& ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim().ToLower()
                 $target_audio_args = @()
@@ -392,7 +473,7 @@ $btnStart.Add_Click({
                     
                     # Set up probe cache references inside cache for this file
                     $probeCache = $null
-                    if ($config.CacheEnabled) {
+                    if ($config.CacheEnabled -and -not $isClipExtracted) {
                         if (-not $config.Cache.ContainsKey($key)) {
                             $config.Cache[$key] = @{
                                 Path = $f.FullName
@@ -423,6 +504,8 @@ $btnStart.Add_Click({
                     
                     $vmafLoopSuccess = $false
                     $attemptedCqs = @{}
+                    $totalTargetsChecked = 0
+                    $quickTestSkips = 0
                     foreach ($target in $vmafLadder) {
                         if ($stopSignal[0]) { break }
                         
@@ -443,7 +526,7 @@ $btnStart.Add_Click({
                             $res.FinalVmaf = "$([math]::Round($maxAchievableVmaf,1))"
                         } else {
                             Write-Output @{ Type="Log"; Msg="[PROBE] Starting VMAF search (Target: $target) for: $($f.Name)" }
-                            $samplePoints = if($config.VmafSamples -eq 1){ @($duration/2) } else { 1..$config.VmafSamples | ForEach-Object { ($duration/($config.VmafSamples+1))*$_ } }
+                            $samplePoints = if($config.VmafSamples -eq 1){ @($testDuration/2) } else { 1..$config.VmafSamples | ForEach-Object { ($testDuration/($config.VmafSamples+1))*$_ } }
                             
                             # Pre-extract reference sample segments once
                             Write-Output @{ Type="Log"; Msg="[PROBE] Pre-extracting $($samplePoints.Count) reference sample segments..." }
@@ -459,7 +542,7 @@ $btnStart.Add_Click({
                                     $sp = $samplePoints[$sIdx]
                                     $sampleSrc = Join-Path $config.TempDir "v_s_ref_${sIdx}_${uid}.mkv"
                                     
-                                    $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$sp", "-t", "$($config.VmafDur)", "-i", "$($f.FullName)", "-c:v", "copy", "-an", "$sampleSrc")
+                                    $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$sp", "-t", "$($config.VmafDur)", "-i", "$testPath", "-c:v", "copy", "-an", "$sampleSrc")
                                     $p = Start-Process -FilePath "ffmpeg" -ArgumentList $extractArgs -NoNewWindow -Wait -PassThru
                                     if ($p.ExitCode -eq 0 -and (Test-Path $sampleSrc)) {
                                         $refSamples += $sampleSrc
@@ -780,6 +863,63 @@ $btnStart.Add_Click({
                         }
                         $attemptedCqs[$bestCQ] = $true
 
+                    if ($isClipExtracted) {
+                        $trialOut = Join-Path $config.TempDir "clip_out_${uid}$ext"
+                        Write-Output @{ Type="Log"; Msg="[QUICK TEST] Testing VMAF Target $displayTarget (CQ: $bestCQ) on clip for '$($f.Name)'..." }
+                        $totalTargetsChecked++
+                        $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$clipPath", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
+                        if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                        $ffArgs += $target_audio_args
+                        $ffArgs += $trialOut
+                        
+                        $success = Run-FFmpegWithProgress -ffArgs $ffArgs -fileIndex $idx -totalFiles $files.Count -fileDuration $quickTestDur
+                        
+                        if ($success -and (Test-Path $trialOut)) {
+                            $clipEncodedSize = (Get-Item $trialOut).Length
+                            if ($clipEncodedSize -lt $clipSize) {
+                                $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip target $displayTarget (CQ $bestCQ) succeeded for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay)." }
+                                
+                                # Now run final encode on FULL video!
+                                Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
+                                $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
+                                if ($config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                $ffArgsFull += $target_audio_args
+                                $ffArgsFull += $tempOut
+                                
+                                $successFull = Run-FFmpegWithProgress -ffArgs $ffArgsFull -fileIndex $idx -totalFiles $files.Count -fileDuration $duration
+                                
+                                if ($successFull -and (Test-Path $tempOut)) {
+                                    Write-Output @{ Type="Log"; Msg="[VALIDATE] Verifying output integrity..." }
+                                    $newSize = (Get-Item $tempOut).Length
+                                    if ($newSize -lt $f.OldSizeBytes) {
+                                        $outDurIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOut" 2>$null | Out-String).Trim()
+                                        if ($outDurIn -match "^\d+(\.\d+)?$") { $outDuration = [double]$outDurIn } else { $outDuration = 0 }
+                                        if ($duration -gt 0 -and $outDuration -gt 0 -and [math]::Abs($duration - $outDuration) -le 2) {
+                                            Move-Item $tempOut $finalOut -Force
+                                            $res.Success = $true
+                                            $res.NewSize = $newSize
+                                            Write-Output @{ Type="Log"; Msg="[SUCCESS] Optimization complete. Saved $((($f.OldSizeBytes-$newSize)/1MB).ToString('F2')) MB" }
+                                            $vmafLoopSuccess = $true
+                                            if (Test-Path $trialOut) { Remove-Item $trialOut -Force }
+                                            break
+                                        } else { Write-Output @{ Type="Log"; Msg="[FAIL] Duration mismatch detected." } }
+                                    } else { Write-Output @{ Type="Log"; Msg="[FAIL] Output larger than source." } }
+                                    Remove-Item $tempOut -Force
+                                } else {
+                                    if (Test-Path $tempOut) { Remove-Item $tempOut -Force }
+                                    Write-Output @{ Type="Log"; Msg="[FAIL] Full video encode failed for CQ $bestCQ." }
+                                }
+                            } else {
+                                $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip target $displayTarget (CQ $bestCQ) failed size check for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay). Skipping target." }
+                                $quickTestSkips++
+                            }
+                            if (Test-Path $trialOut) { Remove-Item $trialOut -Force }
+                        } else {
+                            Write-Output @{ Type="Log"; Msg="[FAIL] Encoding failed for VMAF Target $target on clip for '$($f.Name)'." }
+                        }
+                    } else {
                         Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
                         $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
                         if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
@@ -810,55 +950,121 @@ $btnStart.Add_Click({
                             if (-not $stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[FAIL] FFmpeg exited with error." } }
                         }
                     }
+                    }
                     
                     if (-not $vmafLoopSuccess -and $res.Msg -ne "Max VMAF < Min VMAF" -and -not $stopSignal[0]) {
-                        $res.Msg = "Failed"
+                        if ($quickTestSkips -gt 0 -and $quickTestSkips -eq $totalTargetsChecked) {
+                            $res.Msg = "Skipped (Quick Test)"
+                        } else {
+                            $res.Msg = "Failed"
+                        }
                     }
                 } else {
+                    $totalTargetsChecked = 0
+                    $quickTestSkips = 0
                     foreach ($q in $config.QualityLadder) {
                         if ($stopSignal[0]) { break }
                         $qTrim = $q.Trim()
-                        Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (CQ: $qTrim)..." }
-                        $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
-                        if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
-                        $ffArgs += $target_audio_args
-                        $ffArgs += $tempOut
                         
-                        $success = Run-FFmpegWithProgress -ffArgs $ffArgs -fileIndex $idx -totalFiles $files.Count -fileDuration $duration
-                        
-                        if ($success -and (Test-Path $tempOut)) {
-                            if ($stopSignal[0]) { Remove-Item $tempOut -Force; break }
-                            Write-Output @{ Type="Log"; Msg="[VALIDATE] Verifying output integrity..." }
-                            $newSize = (Get-Item $tempOut).Length
-                            if ($newSize -lt $f.OldSizeBytes) {
-                                $outDurIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOut" 2>$null | Out-String).Trim()
-                                if ($outDurIn -match "^\d+(\.\d+)?$") { $outDuration = [double]$outDurIn } else { $outDuration = 0 }
-                                if ($duration -gt 0 -and $outDuration -gt 0 -and [math]::Abs($duration - $outDuration) -le 2) {
-                                    Move-Item $tempOut $finalOut -Force
-                                    $res.Success = $true
-                                    $res.NewSize = $newSize
-                                    Write-Output @{ Type="Log"; Msg="[SUCCESS] Optimization complete. Saved $((($f.OldSizeBytes-$newSize)/1MB).ToString('F2')) MB" }
-                                    break
-                                } else { Write-Output @{ Type="Log"; Msg="[FAIL] Duration mismatch detected." } }
-                            } else { Write-Output @{ Type="Log"; Msg="[FAIL] Output larger than source." } }
-                            Remove-Item $tempOut -Force
+                        if ($isClipExtracted) {
+                            $trialOut = Join-Path $config.TempDir "clip_out_${uid}$ext"
+                            Write-Output @{ Type="Log"; Msg="[QUICK TEST] Testing CQ $qTrim on clip for '$($f.Name)'..." }
+                            $totalTargetsChecked++
+                            $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$clipPath", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
+                            if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            $ffArgs += $target_audio_args
+                            $ffArgs += $trialOut
+                            
+                            $success = Run-FFmpegWithProgress -ffArgs $ffArgs -fileIndex $idx -totalFiles $files.Count -fileDuration $quickTestDur
+                            
+                            if ($success -and (Test-Path $trialOut)) {
+                                $clipEncodedSize = (Get-Item $trialOut).Length
+                                if ($clipEncodedSize -lt $clipSize) {
+                                    $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                    Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip CQ $qTrim succeeded for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay)." }
+                                    Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (CQ: $qTrim)..." }
+                                    $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
+                                    if ($config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                    $ffArgsFull += $target_audio_args
+                                    $ffArgsFull += $tempOut
+                                    
+                                    $successFull = Run-FFmpegWithProgress -ffArgs $ffArgsFull -fileIndex $idx -totalFiles $files.Count -fileDuration $duration
+                                    if ($successFull -and (Test-Path $tempOut)) {
+                                        Write-Output @{ Type="Log"; Msg="[VALIDATE] Verifying output integrity..." }
+                                        $newSize = (Get-Item $tempOut).Length
+                                        if ($newSize -lt $f.OldSizeBytes) {
+                                            $outDurIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOut" 2>$null | Out-String).Trim()
+                                            if ($outDurIn -match "^\d+(\.\d+)?$") { $outDuration = [double]$outDurIn } else { $outDuration = 0 }
+                                            if ($duration -gt 0 -and $outDuration -gt 0 -and [math]::Abs($duration - $outDuration) -le 2) {
+                                                Move-Item $tempOut $finalOut -Force
+                                                $res.Success = $true
+                                                $res.NewSize = $newSize
+                                                Write-Output @{ Type="Log"; Msg="[SUCCESS] Optimization complete. Saved $((($f.OldSizeBytes-$newSize)/1MB).ToString('F2')) MB" }
+                                                if (Test-Path $trialOut) { Remove-Item $trialOut -Force }
+                                                break
+                                            } else { Write-Output @{ Type="Log"; Msg="[FAIL] Duration mismatch detected." } }
+                                        } else { Write-Output @{ Type="Log"; Msg="[FAIL] Output larger than source." } }
+                                        Remove-Item $tempOut -Force
+                                    } else {
+                                        if (Test-Path $tempOut) { Remove-Item $tempOut -Force }
+                                    }
+                                } else {
+                                    $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                    Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip CQ $qTrim failed size check for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay). Skipping." }
+                                    $quickTestSkips++
+                                }
+                                if (Test-Path $trialOut) { Remove-Item $trialOut -Force }
+                            } else {
+                                if (Test-Path $trialOut) { Remove-Item $trialOut -Force }
+                            }
                         } else {
-                            if (Test-Path $tempOut) { Remove-Item $tempOut -Force }
-                            if (-not $stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[FAIL] FFmpeg exited with error." } }
+                            Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (CQ: $qTrim)..." }
+                            $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
+                            if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            $ffArgs += $target_audio_args
+                            $ffArgs += $tempOut
+                            
+                            $success = Run-FFmpegWithProgress -ffArgs $ffArgs -fileIndex $idx -totalFiles $files.Count -fileDuration $duration
+                            
+                            if ($success -and (Test-Path $tempOut)) {
+                                if ($stopSignal[0]) { Remove-Item $tempOut -Force; break }
+                                Write-Output @{ Type="Log"; Msg="[VALIDATE] Verifying output integrity..." }
+                                $newSize = (Get-Item $tempOut).Length
+                                if ($newSize -lt $f.OldSizeBytes) {
+                                    $outDurIn = (& ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$tempOut" 2>$null | Out-String).Trim()
+                                    if ($outDurIn -match "^\d+(\.\d+)?$") { $outDuration = [double]$outDurIn } else { $outDuration = 0 }
+                                    if ($duration -gt 0 -and $outDuration -gt 0 -and [math]::Abs($duration - $outDuration) -le 2) {
+                                        Move-Item $tempOut $finalOut -Force
+                                        $res.Success = $true
+                                        $res.NewSize = $newSize
+                                        Write-Output @{ Type="Log"; Msg="[SUCCESS] Optimization complete. Saved $((($f.OldSizeBytes-$newSize)/1MB).ToString('F2')) MB" }
+                                        break
+                                    } else { Write-Output @{ Type="Log"; Msg="[FAIL] Duration mismatch detected." } }
+                                } else { Write-Output @{ Type="Log"; Msg="[FAIL] Output larger than source." } }
+                                Remove-Item $tempOut -Force
+                            } else {
+                                if (Test-Path $tempOut) { Remove-Item $tempOut -Force }
+                                if (-not $stopSignal[0]) { Write-Output @{ Type="Log"; Msg="[FAIL] FFmpeg exited with error." } }
+                            }
                         }
                     }
                 }
             } else { $res.Msg = "Path Error" }
 
             if (-not $stopSignal[0] -and -not $res.Success) {
+                if ($quickTestSkips -gt 0 -and $quickTestSkips -eq $totalTargetsChecked) {
+                    $res.Msg = "Skipped (Quick Test)"
+                } else {
+                    if ($res.Msg -ne "Max VMAF < Min VMAF") { $res.Msg = "Failed" }
+                }
                 try {
-                    if ($config.OnFail -eq "Move" -and $res.Msg -ne "Max VMAF < Min VMAF") {
+                    if ($config.OnFail -eq "Move" -and $res.Msg -ne "Max VMAF < Min VMAF" -and $res.Msg -ne "Skipped (Quick Test)") {
                         $unoptDir = Join-Path $dir "Unoptimizable"
                         if (-not (Test-Path $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
                         $dest = Join-Path $unoptDir $f.Name
                         if (Test-Path $f.FullName) { Move-Item $f.FullName $dest -Force }
                         Write-Output @{ Type="Log"; Msg="[WARN] Moved failed file to 'Unoptimizable'." }
-                    } elseif ($config.OnFail -eq "Delete" -and $res.Msg -ne "Max VMAF < Min VMAF") {
+                    } elseif ($config.OnFail -eq "Delete" -and $res.Msg -ne "Max VMAF < Min VMAF" -and $res.Msg -ne "Skipped (Quick Test)") {
                         if (Test-Path $f.FullName) { Remove-Item $f.FullName -Force }
                         Write-Output @{ Type="Log"; Msg="[WARN] Deleted failed file." }
                     }
@@ -873,6 +1079,9 @@ $btnStart.Add_Click({
                 }
                 $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile 
             }            
+            if ($clipPath -and (Test-Path $clipPath)) {
+                try { Remove-Item $clipPath -Force } catch {}
+            }
             if ($stopSignal[0]) { 
                 Write-Output @{ Index=$idx; Success=$false; Msg="Stopped"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }
                 break 

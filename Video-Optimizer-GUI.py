@@ -1,6 +1,6 @@
-import os
+﻿import os
 import sys
-# Version: 3.0.1
+# Version: 3.1.0
 import json
 import time
 import uuid
@@ -471,6 +471,10 @@ class VideoOptimizerEngine:
         cmd = ['ffmpeg', '-progress', 'pipe:1'] + args
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, universal_newlines=True)
         
+        fps = "---"
+        speed = "---"
+        eta_str = "---"
+        
         while True:
             if self.stop_requested:
                 process.terminate()
@@ -481,16 +485,37 @@ class VideoOptimizerEngine:
                 break
             
             if line:
-                if "out_time_us=" in line:
+                line_stripped = line.strip()
+                if line_stripped.startswith("fps="):
+                    fps = line_stripped.split("=")[1].strip()
+                elif line_stripped.startswith("speed="):
+                    speed = line_stripped.split("=")[1].strip()
+                elif line_stripped.startswith("out_time_us="):
                     try:
-                        val = int(line.split('=')[1].strip())
+                        val = int(line_stripped.split('=')[1].strip())
                         current_sec = val / 1000000.0
                         if file_duration > 0:
                             pct = current_sec / file_duration
                             pct = max(0.0, min(1.0, pct))
                             overall_pct = (file_index + pct) / total_files
                             self.update_progress(overall_pct)
-                            self.update_status(f"Processing: File {file_index + 1}/{total_files} - {pct * 100:.1f}% ({current_sec:.1f}s / {file_duration:.1f}s)")
+                            
+                            # Parse speed to calculate ETA
+                            speed_cleaned = speed.replace("x", "").strip()
+                            try:
+                                speed_val = float(speed_cleaned)
+                                if speed_val > 0.01:
+                                    eta_sec = int((file_duration - current_sec) / speed_val)
+                                    if eta_sec > 60:
+                                        eta_str = f"{eta_sec // 60}m {eta_sec % 60}s"
+                                    else:
+                                        eta_str = f"{eta_sec}s"
+                                else:
+                                    eta_str = "---"
+                            except:
+                                eta_str = "---"
+                                
+                            self.update_status(f"Processing: File {file_index + 1}/{total_files} - {pct * 100:.1f}% | Speed: {speed} | FPS: {fps} | ETA: {eta_str}")
                     except:
                         pass
                 elif "Error" in line or "failed" in line:
@@ -569,6 +594,45 @@ class VideoOptimizerEngine:
         # 5. Get duration for progress tracking during encode
         duration = self.get_video_duration(file_path)
 
+        # Quick Test Mode Setup
+        quick_test = config.get('QuickTestEnabled', True)
+        quick_test_dur = config.get('QuickTestDuration', 25)
+        
+        # Enforce minimum duration dynamically based on VMAF settings
+        vmaf_enabled = config.get('VmafEnabled', True)
+        vmaf_samples = int(config.get('VmafSamples', 3))
+        vmaf_dur = int(config.get('VmafDur', 5))
+        min_needed = (vmaf_samples * vmaf_dur) if vmaf_enabled else 5
+        if quick_test and quick_test_dur < min_needed:
+            quick_test_dur = min_needed
+        
+        is_clip_extracted = False
+        clip_path = None
+        
+        if quick_test and duration and duration > quick_test_dur * 2:
+            self.log(f"[QUICK TEST] Preparing {quick_test_dur}s representative clip for '{file_path.name}'...")
+            start_time = max(0.0, duration * 0.1) # 10% into the video
+            
+            uid = str(uuid.uuid4())[:8]
+            clip_path = Path(config.get('TempDir', os.environ.get('TEMP', '.'))) / f"clip_src_{uid}{file_path.suffix}"
+            
+            try:
+                extract_cmd = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-ss', str(start_time), '-t', str(quick_test_dur), '-i', str(file_path), '-c', 'copy', str(clip_path)]
+                subprocess.run(extract_cmd, check=True)
+                
+                if clip_path.exists() and clip_path.stat().st_size > 0:
+                    is_clip_extracted = True
+                    self.log(f"[QUICK TEST] Clip extracted for '{file_path.name}': {clip_path.name} ({self.format_bytes(clip_path.stat().st_size)})")
+                else:
+                    self.log("[WARN] Extracted clip is empty. Falling back to full video optimization.")
+            except Exception as e:
+                self.log(f"[WARN] Clip extraction failed: {e}. Falling back to full video optimization.")
+                if clip_path and clip_path.exists():
+                    clip_path.unlink()
+                clip_path = None
+
+        test_file = clip_path if is_clip_extracted else file_path
+
         # 5. Core Processing Loop
         if config.get('VmafEnabled'):
             vmaf_ladder = config.get('VmafLadder', [config.get('VmafTarget', 93)])
@@ -591,6 +655,8 @@ class VideoOptimizerEngine:
                 res['Msg'] = 'Max VMAF < Min VMAF'
             else:
                 attempted_cqs = set()
+                total_targets_checked = 0
+                quick_test_skips = 0
                 for target in vmaf_ladder:
                     if self.stop_requested: break
                     
@@ -606,7 +672,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None)
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -627,7 +693,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(file_path, config, target, signature)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None)
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -651,9 +717,88 @@ class VideoOptimizerEngine:
                         continue
                     attempted_cqs.add(best_cq)
                     
-                    self.log(f"[ENCODE] Running final encode (VMAF Target: {display_target}, CQ: {best_cq})...")
-                    success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, duration)
-                    
+                    if is_clip_extracted:
+                        trial_out = Path(config.get('TempDir', '.')) / f"clip_out_{uid}{container}"
+                        self.log(f"[QUICK TEST] Testing VMAF Target {display_target} (CQ {best_cq}) on clip for '{file_path.name}'...")
+                        total_targets_checked += 1
+                        success = self.execute_encode(clip_path, trial_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, quick_test_dur)
+                        
+                        if success and trial_out.exists():
+                            clip_source_size = clip_path.stat().st_size
+                            clip_encoded_size = trial_out.stat().st_size
+                            if clip_encoded_size < clip_source_size:
+                                self.log(f"[QUICK TEST] Clip target {display_target} (CQ {best_cq}) succeeded for '{file_path.name}': {self.format_bytes(clip_encoded_size)} (Source clip: {self.format_bytes(clip_source_size)}).")
+                                self.log(f"[ENCODE] Running final encode on full video (VMAF Target: {display_target}, CQ: {best_cq})...")
+                                full_success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, duration)
+                                if full_success and temp_out.exists():
+                                    val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
+                                    if val_res['Success']:
+                                        res.update(val_res)
+                                        if trial_out.exists(): trial_out.unlink()
+                                        break
+                                    else:
+                                        if temp_out.exists(): temp_out.unlink()
+                                        self.log(f"[FAIL] Full video validation failed for CQ {best_cq}.")
+                                else:
+                                    if temp_out.exists(): temp_out.unlink()
+                                    self.log(f"[FAIL] Full video encode failed for CQ {best_cq}.")
+                            else:
+                                self.log(f"[QUICK TEST] Clip target {display_target} (CQ {best_cq}) failed size check for '{file_path.name}': {self.format_bytes(clip_encoded_size)} (Source clip: {self.format_bytes(clip_source_size)}). Skipping target.")
+                                quick_test_skips += 1
+                            if trial_out.exists(): trial_out.unlink()
+                        else:
+                            self.log(f"[FAIL] Encoding failed for VMAF Target {target} on clip for '{file_path.name}'.")
+                    else:
+                        self.log(f"[ENCODE] Running final encode (VMAF Target: {display_target}, CQ: {best_cq})...")
+                        success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, best_cq, file_index, total_files, duration)
+                        
+                        if success and temp_out.exists():
+                            val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
+                            if val_res['Success']:
+                                res.update(val_res)
+                                break
+                            else:
+                                if temp_out.exists(): temp_out.unlink()
+                                self.log(f"[FAIL] VMAF Target {display_target} yielded larger file or failed validation.")
+                        else:
+                            if temp_out.exists(): temp_out.unlink()
+                            self.log(f"[FAIL] Encoding failed for VMAF Target {target}.")
+                if not res['Success'] and not self.stop_requested and res['Msg'] != 'Max VMAF < Min VMAF':
+                    if quick_test_skips > 0 and quick_test_skips == total_targets_checked:
+                        res['Msg'] = 'Skipped (Quick Test)'
+        else:
+            active_qualities = config.get('QualityLadder', [23, 26, 29])
+            for q in active_qualities:
+                if self.stop_requested: break
+                
+                if is_clip_extracted:
+                    trial_out = Path(config.get('TempDir', '.')) / f"clip_out_{uid}{container}"
+                    self.log(f"[QUICK TEST] Testing CQ {q} on clip for '{file_path.name}'...")
+                    success = self.execute_encode(clip_path, trial_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, quick_test_dur)
+                    if success and trial_out.exists():
+                        clip_source_size = clip_path.stat().st_size
+                        clip_encoded_size = trial_out.stat().st_size
+                        if clip_encoded_size < clip_source_size:
+                            self.log(f"[QUICK TEST] Clip CQ {q} succeeded for '{file_path.name}': {self.format_bytes(clip_encoded_size)} (Source clip: {self.format_bytes(clip_source_size)}).")
+                            self.log(f"[ENCODE] Running final encode on full video (CQ: {q})...")
+                            full_success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, duration)
+                            if full_success and temp_out.exists():
+                                val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
+                                if val_res['Success']:
+                                    res.update(val_res)
+                                    if trial_out.exists(): trial_out.unlink()
+                                    break
+                                else:
+                                    if temp_out.exists(): temp_out.unlink()
+                            else:
+                                if temp_out.exists(): temp_out.unlink()
+                        else:
+                            self.log(f"[QUICK TEST] Clip CQ {q} failed size check for '{file_path.name}': {self.format_bytes(clip_encoded_size)} (Source clip: {self.format_bytes(clip_source_size)}). Skipping.")
+                            quick_test_skips += 1
+                        if trial_out.exists(): trial_out.unlink()
+                else:
+                    self.log(f"[ENCODE] Running final encode (CQ: {q})...")
+                    success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, duration)
                     if success and temp_out.exists():
                         val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
                         if val_res['Success']:
@@ -661,30 +806,15 @@ class VideoOptimizerEngine:
                             break
                         else:
                             if temp_out.exists(): temp_out.unlink()
-                            self.log(f"[FAIL] VMAF Target {display_target} yielded larger file or failed validation.")
                     else:
                         if temp_out.exists(): temp_out.unlink()
-                        self.log(f"[FAIL] Encoding failed for VMAF Target {target}.")
-        else:
-            active_qualities = config.get('QualityLadder', [23, 26, 29])
-            for q in active_qualities:
-                if self.stop_requested: break
-                
-                self.log(f"[ENCODE] Running final encode (CQ: {q})...")
-                success = self.execute_encode(file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, duration)
-                
-                if success and temp_out.exists():
-                    val_res = self.validate_output(file_path, temp_out, final_out, file_info, config)
-                    if val_res['Success']:
-                        res.update(val_res)
-                        break
-                    else:
-                        if temp_out.exists(): temp_out.unlink()
-                else:
-                    if temp_out.exists(): temp_out.unlink()
+
+            if not res['Success'] and not self.stop_requested:
+                if quick_test_skips > 0 and quick_test_skips == total_targets_checked:
+                    res['Msg'] = 'Skipped (Quick Test)'
 
         # 6. Failed Action Handling
-        if not res['Success']:
+        if not res['Success'] and res.get('Msg') != 'Skipped (Quick Test)':
             try:
                 on_fail = config.get('OnFail', 'Ignore (Keep Original)')
                 if "Unoptimizable" in on_fail:
@@ -729,6 +859,13 @@ class VideoOptimizerEngine:
             try:
                 with open(config['CacheFile'], 'w') as f:
                     json.dump(list(config['Cache'].values()), f, indent=4)
+            except:
+                pass
+
+        # Cleanup clip source
+        if clip_path and clip_path.exists():
+            try:
+                clip_path.unlink()
             except:
                 pass
 
@@ -820,7 +957,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro v3.0.1")
+        self.title("Ultimate Video Optimizer Pro v3.1.0")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(
@@ -909,6 +1046,27 @@ class VideoOptimizerGUI(ctk.CTk):
         self.combo_container.set("MP4")
         self.engine_frame.grid_columnconfigure(0, weight=1)
         self.engine_frame.grid_columnconfigure(1, weight=1)
+
+        # Quick Test Mode UI
+        self.quick_test_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.quick_test_frame.pack(fill="x", padx=20, pady=5)
+        
+        self.chk_quick_test = ctk.CTkCheckBox(self.quick_test_frame, text="Quick Test Mode", command=self.toggle_quick_test)
+        self.chk_quick_test.pack(anchor="w", pady=(5, 5))
+        self.chk_quick_test.select()
+        
+        self.quick_test_slider_frame = ctk.CTkFrame(self.quick_test_frame, fg_color="transparent")
+        self.quick_test_slider_frame.pack(fill="x")
+        
+        self.lbl_quick_test_desc = ctk.CTkLabel(self.quick_test_slider_frame, text="Clip Duration (seconds)", font=ctk.CTkFont(size=10))
+        self.lbl_quick_test_desc.pack(side="left")
+        
+        self.lbl_quick_test_val = ctk.CTkLabel(self.quick_test_slider_frame, text="25s", font=ctk.CTkFont(weight="bold"))
+        self.lbl_quick_test_val.pack(side="right")
+        
+        self.slider_quick_test = ctk.CTkSlider(self.quick_test_frame, from_=5, to=60, number_of_steps=55, command=self.update_quick_test_label)
+        self.slider_quick_test.pack(fill="x", pady=(0, 5))
+        self.slider_quick_test.set(25)
 
         self.chk_recursive = ctk.CTkCheckBox(self.sidebar, text="Recursive Scan")
         self.chk_recursive.pack(padx=20, pady=(15, 5), anchor="w")
@@ -1174,6 +1332,17 @@ class VideoOptimizerGUI(ctk.CTk):
             self.vmaf_card.pack_forget()
             self.manual_card.pack(fill="x", padx=20, pady=10, after=self.chk_vmaf)
 
+    def toggle_quick_test(self):
+        if self.chk_quick_test.get():
+            self.quick_test_slider_frame.pack(fill="x")
+            self.slider_quick_test.pack(fill="x", pady=(0, 5))
+        else:
+            self.quick_test_slider_frame.pack_forget()
+            self.slider_quick_test.pack_forget()
+
+    def update_quick_test_label(self, val):
+        self.lbl_quick_test_val.configure(text=f"{int(val)}s")
+
     def browse_folder(self):
         path = filedialog.askdirectory()
         if path:
@@ -1287,6 +1456,14 @@ class VideoOptimizerGUI(ctk.CTk):
                     if config['Cache']: self.chk_cache.select()
                     else: self.chk_cache.deselect()
                 
+                if 'QuickTestEnabled' in config:
+                    if config['QuickTestEnabled']: self.chk_quick_test.select()
+                    else: self.chk_quick_test.deselect()
+                    self.toggle_quick_test()
+                if 'QuickTestDuration' in config:
+                    self.slider_quick_test.set(config['QuickTestDuration'])
+                    self.update_quick_test_label(config['QuickTestDuration'])
+                
                 # Update Engine's default lists if present in config
                 if 'KnownExtensions' in config: self.engine.known_extensions = config['KnownExtensions']
                 if 'IgnoredExtensions' in config: self.engine.ignored_extensions = config['IgnoredExtensions']
@@ -1324,6 +1501,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'OnFail': self.combo_on_fail.get(),
                 'Resume': bool(self.chk_resume.get()),
                 'Cache': bool(self.chk_cache.get()),
+                'QuickTestEnabled': bool(self.chk_quick_test.get()),
+                'QuickTestDuration': int(self.slider_quick_test.get()),
                 'KnownExtensions': self.engine.known_extensions,
                 'IgnoredExtensions': self.engine.ignored_extensions,
                 'EfficientCodecs': self.engine.efficient_codecs
@@ -1490,6 +1669,8 @@ class VideoOptimizerGUI(ctk.CTk):
             "CacheEnabled": self.chk_cache.get(),
             "LogEnabled": self.chk_log.get(),
             "SettingsKey": settings_key,
+            "QuickTestEnabled": self.chk_quick_test.get(),
+            "QuickTestDuration": int(self.slider_quick_test.get()),
             "CacheFile": os.path.join(work_dir, "Cache.json"),
             "TempDir": temp_dir,
             "Cache": {}
@@ -1572,6 +1753,7 @@ class VideoOptimizerGUI(ctk.CTk):
                 tag = "success"
         elif status == "In Progress": tag = "progress"
         elif status in ["Already Efficient", "Cached Skip"]: tag = "skip"
+        elif "Skipped (Quick Test)" in status: tag = "warn"
         elif "Fail" in status or status in ["Duration Mismatch", "Larger than Source"]: tag = "fail"
         
         if tag:

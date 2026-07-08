@@ -1,5 +1,5 @@
-# Ultimate Video Optimizer
-# Version: 3.0.1
+﻿# Ultimate Video Optimizer
+# Version: 3.1.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.
@@ -110,6 +110,10 @@ $global:vmafSampleDuration = 5
 $global:vmafSampleCount = 3
 $global:stepOptions = @(1, 2, 3, 4, 5, 6, 8)
 
+$global:quickTestEnabled = $true
+$global:quickTestDuration = 25
+$global:quickTestPresets = @(0, 10, 15, 25, 30, 60)
+
 # --- Configuration Handling ---
 $configFile = Join-Path $PSScriptRoot "config.json"
 
@@ -143,6 +147,8 @@ function Save-Config {
         KnownIgnoredExtensions = $global:knownIgnoredExtensions
         EfficientCodecs   = $global:efficientCodecs
         EnableCache       = $global:enableCache
+        QuickTestEnabled   = $global:quickTestEnabled
+        QuickTestDuration  = $global:quickTestDuration
     }
     try {
         $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $configFile -Encoding UTF8
@@ -174,6 +180,8 @@ function Load-Config {
             if ($config.UnoptCustomFolder) { $global:unoptCustomFolder = $config.UnoptCustomFolder }
             if ($null -ne $config.SkipEfficient) { $global:skipEfficient = [bool]$config.SkipEfficient }
             if ($null -ne $config.EnableCache) { $global:enableCache = [bool]$config.EnableCache }
+            if ($null -ne $config.QuickTestEnabled) { $global:quickTestEnabled = [bool]$config.QuickTestEnabled }
+            if ($config.QuickTestDuration) { $global:quickTestDuration = [int]$config.QuickTestDuration }
             if ($config.KnownVideoExtensions) { $global:knownVideoExtensions = @($config.KnownVideoExtensions) }
             if ($config.KnownIgnoredExtensions) { $global:knownIgnoredExtensions = @($config.KnownIgnoredExtensions) }
             if ($config.EfficientCodecs) { $global:efficientCodecs = @($config.EfficientCodecs) }
@@ -788,6 +796,7 @@ $runningMenu = $true
 $selectedIndex = 0
 $audioOptions = @("Copy", "AAC 128k", "AAC 192k", "AAC 256k", "Opus 128k", "Opus 192k", "AC3 384k", "AC3 640k")
 $containerOptions = @("MP4", "MKV", "MOV", "Original")
+$global:currentSubMenu = "Main"
 
 while ($runningMenu) {
     Clear-Host
@@ -798,15 +807,27 @@ while ($runningMenu) {
 
     function Draw-MenuItem {
         param($Index, $Label, $Value, $Hint = "", $Disabled = $false)
-        $prefix = if ($selectedIndex -eq $Index) { " >" } else { "  " }
-        $color = if ($Disabled) { "DarkGray" } elseif ($selectedIndex -eq $Index) { "Cyan" } else { "Gray" }
-        $valColor = if ($Disabled) { "DarkGray" } elseif ($selectedIndex -eq $Index) { "White" } else { "DarkGray" }
+        $selected = ($selectedIndex -eq $Index)
+        $prefix = if ($selected) { " >" } else { "  " }
+        $bgColor = if ($selected) { "Cyan" } else { $null }
+        $fgColor = if ($selected) { "Black" } elseif ($Disabled) { "DarkGray" } else { "Gray" }
+        $valFgColor = if ($selected) { "DarkBlue" } elseif ($Disabled) { "DarkGray" } else { "White" }
+        $colonColor = if ($selected) { "Black" } else { "DarkGray" }
 
-        Write-Host "$prefix [$($Index+1)] $Label " -NoNewline -ForegroundColor $color
-        $pad = 18 - $Label.Length
-        if ($pad -gt 0) { Write-Host (" " * $pad) -NoNewline }
-        Write-Host ": " -NoNewline -ForegroundColor $color
-        Write-Host $Value -ForegroundColor $valColor
+        Write-Host "$prefix [$($Index+1)] " -NoNewline
+        if ($bgColor) {
+            Write-Host "$Label " -NoNewline -BackgroundColor $bgColor -ForegroundColor $fgColor
+            $pad = 32 - $Label.Length
+            if ($pad -gt 0) { Write-Host (" " * $pad) -NoNewline -BackgroundColor $bgColor -ForegroundColor $fgColor }
+            Write-Host ": " -NoNewline -BackgroundColor $bgColor -ForegroundColor $colonColor
+            Write-Host "$Value" -BackgroundColor $bgColor -ForegroundColor $valFgColor
+        } else {
+            Write-Host "$Label " -NoNewline -ForegroundColor $fgColor
+            $pad = 32 - $Label.Length
+            if ($pad -gt 0) { Write-Host (" " * $pad) -NoNewline }
+            Write-Host ": " -NoNewline -ForegroundColor $colonColor
+            Write-Host "$Value" -ForegroundColor $valFgColor
+        }
 
         if ($Hint) {
             Write-Host "        L- $Hint" -ForegroundColor DarkGray
@@ -814,60 +835,76 @@ while ($runningMenu) {
     }
 
     $items = @()
-    $items += @{ Label = "Target Folder"; Value = $targetFolder; Hint = "" }
-    $recursiveDisplay = if ($recursive) { 'Yes' } else { 'No' }
-    $items += @{ Label = "Recursive"; Value = $recursiveDisplay; Hint = "" }
-
-    $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
-    $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
-
-    $vmafDisplay = if ($vmafEnabled) { "Enabled" } else { "Disabled" }
-    $vmafHint = if (-not $hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file. [Rec: 1-3 Samples, 3-5s Probe, Target 93-95]" }
-    $items += @{ Label = "Advanced VMAF"; Value = $vmafDisplay; Hint = $vmafHint }
-
-    $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "" }
-
-    if ($vmafEnabled) {
-        $fallbackDisplay = if ($vmafFallback) { "Yes" } else { "No" }
-        $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
-        $items += @{ Label = "Encode with Max VMAF as Fallback"; Value = $fallbackDisplay; Hint = "Encode at optimal CQ even if Target VMAF is unreachable." }
-        $items += @{ Label = "Min Ceiling"; Value = $vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
-        $items += @{ Label = "CQ Range"; Value = "$vmafMinCQ to $vmafMaxCQ"; Hint = "Search Bounds. Reccommended: 15-45. Wider Range = Higher Chance for exact target but Slower." }
-        $items += @{ Label = "Search Step"; Value = "$vmafStep points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5. Larger = Faster Search." }
-        $items += @{ Label = "VMAF Samples"; Value = $vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3. More samples = Better Accuracy but Significantly Slower." }
-        $items += @{ Label = "Probe Duration"; Value = "$vmafSampleDuration sec"; Hint = "Seconds Per Sample. Recommended: 3-5s. Longer = Better Accuracy, Slower Encoding." }
-    } else {
-        $qHint = switch -regex ($activeEnc.Codec) {
-            "nvenc" { "Recommended: 23,26,29 (CQ)" }
-            "qsv"   { "Recommended: 23,26,29 (Global Quality)" }
-            "amf"   { "Recommended: 23,26,29 (QP)" }
-            "libsvtav1" { "Recommended: 24,28,32 (CRF)" }
-            "libx265"   { "Recommended: 24,28,32 (CRF)" }
-            Default { "Recommended: 23-30" }
-        }
-        $items += @{ Label = "Quality"; Value = $quality; Hint = $qHint }
-
-        $pHint = switch -regex ($activeEnc.Codec) {
-            "nvenc" { "Options: p1 to p7 (p5=default, p7=slowest)" }
-            "libsvtav1" { "Options: 0 to 13 (6=balanced, 4=higher quality)" }
-            "libx265"   { "Options: ultrafast to placebo (slow=recommended)" }
-            Default { "Enter encoder-specific preset" }
-        }
-        $presetDisplay = if ($preset) { $preset } else { 'None' }
-        $items += @{ Label = "Preset"; Value = $presetDisplay; Hint = $pHint }
+    if ($global:currentSubMenu -eq "Main") {
+        $items += @{ Label = "Target Folder"; Value = $targetFolder; Hint = "Current directory to scan for files." }
+        $items += @{ Label = "Scan & Filter Settings"; Value = "-->"; Hint = "Configure recursive scanning, efficient codec skipping, and Quick Test Mode." }
+        $items += @{ Label = "Encoder & Quality"; Value = "-->"; Hint = "Select encoder, container format, visual quality settings (VMAF/Manual)." }
+        $items += @{ Label = "Audio & Success Actions"; Value = "-->"; Hint = "Configure audio options, success actions, and failure behaviors." }
     }
-
-    $items += @{ Label = "Audio Action"; Value = $audioAction; Hint = "" }
-    $items += @{ Label = "Container"; Value = $container; Hint = "" }
-
-    $items += @{ Label = "Success Action"; Value = $onSuccessAction; Hint = "What to do if optimization succeeds" }
-
-    $unoptDisplay = if ($unoptAction -match "Custom" -and $unoptCustomFolder) { "Custom ($unoptCustomFolder)" } else { $unoptAction }
-    $items += @{ Label = "Failed Action"; Value = $unoptDisplay; Hint = "What to do if optimization fails" }
+    elseif ($global:currentSubMenu -eq "ScanFilter") {
+        $recursiveDisplay = if ($recursive) { 'Yes' } else { 'No' }
+        $items += @{ Label = "Recursive"; Value = $recursiveDisplay; Hint = "Scan subdirectories recursively." }
+        
+        $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
+        $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
+        
+        $quickTestDisplay = if ($global:quickTestEnabled) { "Enabled ($($global:quickTestDuration)s)" } else { "Disabled" }
+        $items += @{ Label = "Quick Test Mode"; Value = $quickTestDisplay; Hint = "Pre-tests quality targets on a short representative clip to ensure size savings." }
+        
+        $items += @{ Label = "<-- Back to Main Menu"; Value = ""; Hint = "Return to the main configuration menu." }
+    }
+    elseif ($global:currentSubMenu -eq "EncoderQuality") {
+        $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "Video encoder backend to use." }
+        $items += @{ Label = "Container"; Value = $container; Hint = "Output container format." }
+        
+        $vmafDisplay = if ($vmafEnabled) { "Enabled" } else { "Disabled" }
+        $vmafHint = if (-not $hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file." }
+        $items += @{ Label = "Advanced VMAF"; Value = $vmafDisplay; Hint = $vmafHint }
+        
+        if ($vmafEnabled) {
+            $fallbackDisplay = if ($vmafFallback) { "Yes" } else { "No" }
+            $items += @{ Label = "Target VMAF"; Value = $vmafTarget; Hint = "Visual Quality Goal. Target Ladder support (e.g. 95,93,91)." }
+            $items += @{ Label = "Encode with Max VMAF as Fallback"; Value = $fallbackDisplay; Hint = "Encode at optimal CQ even if Target VMAF is unreachable." }
+            $items += @{ Label = "Min Ceiling"; Value = $vmafMinCeiling; Hint = "Hard floor. Files with max possible VMAF below this will be skipped." }
+            $items += @{ Label = "CQ Range"; Value = "$vmafMinCQ to $vmafMaxCQ"; Hint = "Search Bounds. Recommended: 15-45." }
+            $items += @{ Label = "Search Step"; Value = "$vmafStep points"; Hint = "CQ Points Skipped Per Pass. Recommended: 3-5." }
+            $items += @{ Label = "VMAF Samples"; Value = $vmafSampleCount; Hint = "Probes Per Video. Recommended: 1-3." }
+            $items += @{ Label = "Probe Duration"; Value = "$vmafSampleDuration sec"; Hint = "Seconds Per Sample. Recommended: 3-5s." }
+        } else {
+            $qHint = switch -regex ($activeEnc.Codec) {
+                "nvenc" { "Recommended: 23,26,29 (CQ)" }
+                "qsv"   { "Recommended: 23,26,29 (Global Quality)" }
+                "amf"   { "Recommended: 23,26,29 (QP)" }
+                "libsvtav1" { "Recommended: 24,28,32 (CRF)" }
+                "libx265"   { "Recommended: 24,28,32 (CRF)" }
+                Default { "Recommended: 23-30" }
+            }
+            $items += @{ Label = "Quality"; Value = $quality; Hint = $qHint }
+            
+            $pHint = switch -regex ($activeEnc.Codec) {
+                "nvenc" { "Options: p1 to p7 (p5=default, p7=slowest)" }
+                "libsvtav1" { "Options: 0 to 13 (6=balanced, 4=higher quality)" }
+                "libx265"   { "Options: ultrafast to placebo (slow=recommended)" }
+                Default { "Enter encoder-specific preset" }
+            }
+            $presetDisplay = if ($preset) { $preset } else { 'None' }
+            $items += @{ Label = "Preset"; Value = $presetDisplay; Hint = $pHint }
+        }
+        
+        $items += @{ Label = "<-- Back to Main Menu"; Value = ""; Hint = "Return to the main configuration menu." }
+    }
+    elseif ($global:currentSubMenu -eq "AudioSuccess") {
+        $items += @{ Label = "Audio Action"; Value = $audioAction; Hint = "Audio track handling." }
+        $items += @{ Label = "Success Action"; Value = $onSuccessAction; Hint = "What to do if optimization succeeds." }
+        $unoptDisplay = if ($unoptAction -match "Custom" -and $unoptCustomFolder) { "Custom ($unoptCustomFolder)" } else { $unoptAction }
+        $items += @{ Label = "Failed Action"; Value = $unoptDisplay; Hint = "What to do if optimization fails." }
+        
+        $items += @{ Label = "<-- Back to Main Menu"; Value = ""; Hint = "Return to the main configuration menu." }
+    }
 
     $startIndex = $items.Count
     $quitIndex = $startIndex + 1
-    $menuCount = $quitIndex + 1
+    $menuCount = if ($global:currentSubMenu -eq "Main") { $items.Count + 2 } else { $items.Count }
 
     if ($selectedIndex -ge $menuCount) { $selectedIndex = $menuCount - 1 }
 
@@ -875,16 +912,18 @@ while ($runningMenu) {
         Draw-MenuItem $i $items[$i].Label $items[$i].Value $items[$i].Hint
     }
 
-    Write-Host ""
-    if ($selectedIndex -eq $startIndex) { Write-Host " $($S.Arrow) [ Start Optimization ]" -ForegroundColor Green }
-    else { Write-Host "   [ Start Optimization ]" -ForegroundColor DarkGreen }
+    if ($global:currentSubMenu -eq "Main") {
+        Write-Host ""
+        if ($selectedIndex -eq $startIndex) { Write-Host " $($S.Arrow) [ Start Optimization ]" -ForegroundColor Green }
+        else { Write-Host "   [ Start Optimization ]" -ForegroundColor DarkGreen }
 
-    if ($selectedIndex -eq $quitIndex) { Write-Host " $($S.Arrow) [ Quit ]" -ForegroundColor Red }
-    else { Write-Host "   [ Quit ]" -ForegroundColor DarkRed }
+        if ($selectedIndex -eq $quitIndex) { Write-Host " $($S.Arrow) [ Quit ]" -ForegroundColor Red }
+        else { Write-Host "   [ Quit ]" -ForegroundColor DarkRed }
+    }
 
     Write-Host "`n---------------------------------------------" -ForegroundColor Gray
     Write-Host " Navigation : [Up/Down]   Change Value: [Left/Right]" -ForegroundColor Gray
-    Write-Host " Edit/Enter : [Enter]     (Target, Quality, Preset, Custom Folder)" -ForegroundColor Gray
+    Write-Host " Edit/Enter : [Enter]     Select/Enter Text Fields" -ForegroundColor Gray
 
     # Wait for key press
     $key = [Console]::ReadKey($true)
@@ -897,6 +936,19 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
+                "Quick Test Mode" {
+                    $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
+                    $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
+                    if ($idx -lt 0) { $idx = 3 }
+                    $idx = ($idx - 1 + $global:quickTestPresets.Count) % $global:quickTestPresets.Count
+                    $val = $global:quickTestPresets[$idx]
+                    if ($val -eq 0) {
+                        $global:quickTestEnabled = $false
+                    } else {
+                        $global:quickTestEnabled = $true
+                        $global:quickTestDuration = $val
+                    }
+                }
                 "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
                 "Encoder" {
                     $supported = @($global:availableEncoders | Where-Object Supported)
@@ -915,8 +967,12 @@ while ($runningMenu) {
                     }
                 }
                 "Target VMAF" { 
-                    $firstVal = [double](($global:vmafTarget -split ',')[0])
-                    $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))" 
+                    if ($global:vmafTarget -match '[\s,]') {
+                        # Safety: Disable Left/Right for comma-separated ladders
+                    } else {
+                        $firstVal = [double](($global:vmafTarget -split ',')[0])
+                        $global:vmafTarget = "$([math]::Max(70, $firstVal - 1))" 
+                    }
                 }
                 "CQ Range" { $global:vmafMinCQ = [math]::Max(0, $global:vmafMinCQ - 1) }
                 "Search Step" {
@@ -926,7 +982,14 @@ while ($runningMenu) {
                 }
                 "VMAF Samples" { $global:vmafSampleCount = [math]::Max(1, $global:vmafSampleCount - 1) }
                 "Probe Duration" { $global:vmafSampleDuration = [math]::Max(1, $global:vmafSampleDuration - 1) }
-                "Quality" {  }
+                "Quality" {
+                    if ($global:quality -match '[\s,]') {
+                        # Safety: Disable Left/Right for comma-separated ladders
+                    } else {
+                        $firstVal = [double](($global:quality -split ',')[0])
+                        $global:quality = "$([math]::Max(0, $firstVal - 1))"
+                    }
+                }
                 "Preset" {
                     $currentPresets = Get-PresetList $activeEnc.Codec
                     if ($currentPresets.Count -gt 1) {
@@ -963,6 +1026,19 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
+                "Quick Test Mode" {
+                    $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
+                    $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
+                    if ($idx -lt 0) { $idx = 3 }
+                    $idx = ($idx + 1) % $global:quickTestPresets.Count
+                    $val = $global:quickTestPresets[$idx]
+                    if ($val -eq 0) {
+                        $global:quickTestEnabled = $false
+                    } else {
+                        $global:quickTestEnabled = $true
+                        $global:quickTestDuration = $val
+                    }
+                }
                 "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
                 "Encoder" {
                     $supported = @($global:availableEncoders | Where-Object Supported)
@@ -971,7 +1047,7 @@ while ($runningMenu) {
                         $idx = ($idx + 1) % $supported.Count
                         $newEnc = $supported[$idx]
                         $global:selectedEncoderId = $newEnc.ID
-
+                        
                         # Update presets for new encoder
                         $currentPresets = Get-PresetList $newEnc.Codec
                         if ($newEnc.Codec -match "nvenc") { $global:preset = "p5" }
@@ -981,8 +1057,12 @@ while ($runningMenu) {
                     }
                 }
                 "Target VMAF" { 
-                    $firstVal = [double](($global:vmafTarget -split ',')[0])
-                    $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))" 
+                    if ($global:vmafTarget -match '[\s,]') {
+                        # Safety: Disable Left/Right for comma-separated ladders
+                    } else {
+                        $firstVal = [double](($global:vmafTarget -split ',')[0])
+                        $global:vmafTarget = "$([math]::Min(100, $firstVal + 1))" 
+                    }
                 }
                 "CQ Range" { $global:vmafMinCQ = [math]::Min($global:vmafMaxCQ - 1, $global:vmafMinCQ + 1) }
                 "Search Step" {
@@ -992,7 +1072,14 @@ while ($runningMenu) {
                 }
                 "VMAF Samples" { $global:vmafSampleCount = [math]::Min(10, $global:vmafSampleCount + 1) }
                 "Probe Duration" { $global:vmafSampleDuration = [math]::Min(60, $global:vmafSampleDuration + 1) }
-                "Quality" {  }
+                "Quality" {
+                    if ($global:quality -match '[\s,]') {
+                        # Safety: Disable Left/Right for comma-separated ladders
+                    } else {
+                        $firstVal = [double](($global:quality -split ',')[0])
+                        $global:quality = "$([math]::Min(51, $firstVal + 1))"
+                    }
+                }
                 "Preset" {
                     $currentPresets = Get-PresetList $activeEnc.Codec
                     if ($currentPresets.Count -gt 1) {
@@ -1025,84 +1112,121 @@ while ($runningMenu) {
             }
         }
         "Enter" {
-            if ($selectedIndex -eq $startIndex) { $runningMenu = $false }
-            elseif ($selectedIndex -eq $quitIndex) { Write-Host "`nExiting..."; return }
-            else {
-                $itemLabel = $items[$selectedIndex].Label
-                switch ($itemLabel) {
-                    "Target Folder" {
-                        Write-Host "`n"
-                        $newFolder = Read-Host "Enter new target folder path (leave empty to browse)"
-                        if ($newFolder -eq "") {
-                            $browser = New-Object System.Windows.Forms.FolderBrowserDialog
-                            $browser.Description = "Select Target Folder for Optimization"
-                            $browser.SelectedPath = $global:targetFolder
-                            $result = $browser.ShowDialog()
-                            if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-                                $global:targetFolder = $browser.SelectedPath
+            if ($global:currentSubMenu -eq "Main") {
+                if ($selectedIndex -eq $startIndex) { $runningMenu = $false }
+                elseif ($selectedIndex -eq $quitIndex) { Write-Host "`nExiting..."; return }
+                else {
+                    $itemLabel = $items[$selectedIndex].Label
+                    switch ($itemLabel) {
+                        "Target Folder" {
+                            Write-Host "`n"
+                            $newFolder = Read-Host "Enter new target folder path (leave empty to browse)"
+                            if ($newFolder -eq "") {
+                                $browser = New-Object System.Windows.Forms.FolderBrowserDialog
+                                $browser.Description = "Select Target Folder for Optimization"
+                                $browser.SelectedPath = $global:targetFolder
+                                $result = $browser.ShowDialog()
+                                if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+                                    $global:targetFolder = $browser.SelectedPath
+                                }
+                            }
+                            elseif (Test-Path -LiteralPath $newFolder) {
+                                $global:targetFolder = (Get-Item -LiteralPath $newFolder).FullName
+                            }
+                            else {
+                                Write-Host "Invalid path!" -ForegroundColor Red; Start-Sleep -Seconds 1
                             }
                         }
-                        elseif (Test-Path -LiteralPath $newFolder) {
-                            $global:targetFolder = (Get-Item -LiteralPath $newFolder).FullName
-                        }
-                        else {
-                            Write-Host "Invalid path!" -ForegroundColor Red; Start-Sleep -Seconds 1
-                        }
+                        "Scan & Filter Settings" { $global:currentSubMenu = "ScanFilter"; $selectedIndex = 0 }
+                        "Encoder & Quality" { $global:currentSubMenu = "EncoderQuality"; $selectedIndex = 0 }
+                        "Audio & Success Actions" { $global:currentSubMenu = "AudioSuccess"; $selectedIndex = 0 }
                     }
-                    "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
-                    "Recursive" { $global:recursive = -not $global:recursive }
-                    "Target VMAF" {
-                        Write-Host "`n"
-                        $newVmaf = Read-Host "Enter Target VMAF Score (e.g. 95 or 95 93 91)"
-                        if ($newVmaf -match '^[\d\.\s,]+$') { 
-                            $global:vmafTarget = ($newVmaf -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
-                        }
-                        else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                }
+            } else {
+                $itemLabel = $items[$selectedIndex].Label
+                if ($itemLabel -eq "<-- Back to Main Menu") {
+                    $prevMenu = $global:currentSubMenu
+                    $global:currentSubMenu = "Main"
+                    $selectedIndex = switch ($prevMenu) {
+                        "ScanFilter" { 1 }
+                        "EncoderQuality" { 2 }
+                        "AudioSuccess" { 3 }
+                        Default { 0 }
                     }
-                    "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
-                    "Min Ceiling" {
-                        Write-Host "`n"
-                        $newCeil = Read-Host "Enter Min VMAF Ceiling (e.g. 85)"
-                        if ($newCeil -as [double] -and $newCeil -ge 0 -and $newCeil -le 100) { $global:vmafMinCeiling = [double]$newCeil }
-                    }
-                    "Quality" {
-                        Write-Host "`n"
-                        $newQuality = Read-Host "Enter quality value (e.g. 23 26 29)"
-                        if ($newQuality -match '^[\d\.\s,]+$') {
-                            $global:quality = ($newQuality -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
-                        }
-                        else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
-                    }
-                    "CQ Range" {
-                        Write-Host "`n"
-                        $min = Read-Host "Enter Min CQ (e.g. 15)"
-                        $max = Read-Host "Enter Max CQ (e.g. 40)"
-                        if ($min -as [int] -and $max -as [int] -and $min -lt $max) { $global:vmafMinCQ = [int]$min; $global:vmafMaxCQ = [int]$max }
-                    }
-                    "VMAF Samples" {
-                        Write-Host "`n"
-                        $newCount = Read-Host "Enter number of samples (1-10)"
-                        if ($newCount -as [int] -and $newCount -ge 1 -and $newCount -le 10) { $global:vmafSampleCount = [int]$newCount }
-                    }
-                    "Probe Duration" {
-                        Write-Host "`n"
-                        $newDur = Read-Host "Enter probe duration in seconds (1-60)"
-                        if ($newDur -as [int] -and $newDur -ge 1 -and $newDur -le 60) { $global:vmafSampleDuration = [int]$newDur }
-                    }
-                    "Preset" {
-                        Write-Host "`n"
-                        $newPreset = Read-Host "Enter custom preset (or Enter to keep current '$($global:preset)')"
-                        if ($newPreset) { $global:preset = $newPreset }
-                    }
-                    "Failed Action" {
-                        if ($global:unoptAction -match "Custom") {
+                } else {
+                    switch ($itemLabel) {
+                        "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
+                        "Recursive" { $global:recursive = -not $global:recursive }
+                        "Quick Test Mode" {
                             Write-Host "`n"
-                            $newFolder = Read-Host "Enter custom folder path for failed files"
-                            if ($newFolder) {
-                                if (-not (Test-Path $newFolder)) {
-                                    New-Item -ItemType Directory -Path $newFolder | Out-Null
+                            $newDur = Read-Host "Enter Quick Test Duration in seconds (5-60) or 0 to disable"
+                            if ($newDur -match '^\d+$') {
+                                $val = [int]$newDur
+                                if ($val -eq 0) {
+                                    $global:quickTestEnabled = $false
+                                } elseif ($val -ge 5 -and $val -le 60) {
+                                    $global:quickTestEnabled = $true
+                                    $global:quickTestDuration = $val
+                                } else {
+                                    Write-Host "Invalid range! Must be between 5 and 60." -ForegroundColor Red; Start-Sleep -Seconds 1
                                 }
-                                $global:unoptCustomFolder = (Resolve-Path $newFolder).Path
+                            } else {
+                                Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1
+                            }
+                        }
+                        "Target VMAF" {
+                            Write-Host "`n"
+                            $newVmaf = Read-Host "Enter Target VMAF Score (e.g. 95 or 95 93 91)"
+                            if ($newVmaf -match '^[\d\.\s,]+$') { 
+                                $global:vmafTarget = ($newVmaf -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
+                            }
+                            else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                        }
+                        "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
+                        "Min Ceiling" {
+                            Write-Host "`n"
+                            $newCeil = Read-Host "Enter Min VMAF Ceiling (e.g. 85)"
+                            if ($newCeil -as [double] -and $newCeil -ge 0 -and $newCeil -le 100) { $global:vmafMinCeiling = [double]$newCeil }
+                        }
+                        "Quality" {
+                            Write-Host "`n"
+                            $newQuality = Read-Host "Enter quality value (e.g. 23 26 29)"
+                            if ($newQuality -match '^[\d\.\s,]+$') {
+                                $global:quality = ($newQuality -replace ',', ' ' -replace '\s+', ' ').Trim() -replace ' ', ','
+                            }
+                            else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
+                        }
+                        "CQ Range" {
+                            Write-Host "`n"
+                            $min = Read-Host "Enter Min CQ (e.g. 15)"
+                            $max = Read-Host "Enter Max CQ (e.g. 40)"
+                            if ($min -as [int] -and $max -as [int] -and $min -lt $max) { $global:vmafMinCQ = [int]$min; $global:vmafMaxCQ = [int]$max }
+                        }
+                        "VMAF Samples" {
+                            Write-Host "`n"
+                            $newCount = Read-Host "Enter number of samples (1-10)"
+                            if ($newCount -as [int] -and $newCount -ge 1 -and $newCount -le 10) { $global:vmafSampleCount = [int]$newCount }
+                        }
+                        "Probe Duration" {
+                            Write-Host "`n"
+                            $newDur = Read-Host "Enter probe duration in seconds (1-60)"
+                            if ($newDur -as [int] -and $newDur -ge 1 -and $newDur -le 60) { $global:vmafSampleDuration = [int]$newDur }
+                        }
+                        "Preset" {
+                            Write-Host "`n"
+                            $newPreset = Read-Host "Enter custom preset (or Enter to keep current '$($global:preset)')"
+                            if ($newPreset) { $global:preset = $newPreset }
+                        }
+                        "Failed Action" {
+                            if ($global:unoptAction -match "Custom") {
+                                Write-Host "`n"
+                                $newFolder = Read-Host "Enter custom folder path for failed files"
+                                if ($newFolder) {
+                                    if (-not (Test-Path $newFolder)) {
+                                        New-Item -ItemType Directory -Path $newFolder | Out-Null
+                                    }
+                                    $global:unoptCustomFolder = (Resolve-Path $newFolder).Path
+                                }
                             }
                         }
                     }
@@ -1295,6 +1419,49 @@ if ($totalFiles -eq 0) {
             $unoptReason = ""
             $successfulQuality = ""
 
+            # Quick Test Mode Setup
+            $quickTest = $global:quickTestEnabled
+            $quickTestDur = $global:quickTestDuration
+            
+            # Enforce minimum duration dynamically based on VMAF settings
+            $minNeeded = if ($global:vmafEnabled) { [int]$global:vmafSampleCount * [int]$global:vmafSampleDuration } else { 5 }
+            if ($quickTest -and $quickTestDur -lt $minNeeded) {
+                $quickTestDur = $minNeeded
+            }
+            
+            $isClipExtracted = $false
+            $clipPath = $null
+            
+            if ($quickTest -and $duration -and $duration -gt ($quickTestDur * 2)) {
+                Write-Host "  $($S.Bullet) Preparing $($quickTestDur)s representative clip for test run..." -ForegroundColor Gray
+                $startTime = [math]::max(0.0, $duration * 0.1)
+                
+                $clipPath = Join-Path $global:tempDir "clip_src_${uid}$fileExt"
+                
+                $hwDecodeArgs = @()
+                if ($videoCodec -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                elseif ($videoCodec -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                elseif ($videoCodec -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                
+                $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$startTime", "-t", "$quickTestDur", "-i", "$input", "-c", "copy", "$clipPath")
+                
+                $global:LASTEXITCODE = 0
+                & ffmpeg @extractArgs
+                if ($global:LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $clipPath)) {
+                    $isClipExtracted = $true
+                    $clipSize = (Get-Item -LiteralPath $clipPath).Length
+                    $clipSizeDisplay = if ($clipSize -gt 1MB) { "$((($clipSize)/1MB).ToString('F2')) MB" } else { "$((($clipSize)/1KB).ToString('F2')) KB" }
+                    Write-Host "  $($S.Bullet) Clip extracted: $(Split-Path $clipPath -Leaf) ($clipSizeDisplay)" -ForegroundColor Gray
+                } else {
+                    Write-Host "  $($S.Bullet) [WARN] Clip extraction failed or empty. Falling back to full video optimization." -ForegroundColor Yellow
+                    if (Test-Path -LiteralPath $clipPath) { Remove-Item -LiteralPath $clipPath -Force }
+                    $clipPath = $null
+                }
+            }
+            
+            $testPath = if ($isClipExtracted) { $clipPath } else { $input }
+            $testDuration = if ($isClipExtracted) { $quickTestDur } else { $duration }
+
             # VMAF Target Ladder: Tries lower targets if the file is larger than the source
             $vmafTargetsToTry = if ($global:vmafEnabled) { 
                 $targets = $global:vmafTarget -split ',' | ForEach-Object { [double]$_ }
@@ -1311,7 +1478,7 @@ if ($totalFiles -eq 0) {
 
             $fileKey = Get-FileCacheKey $input
             $probeKey = "codec=$videoCodec|preset=$global:preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
-            if ($global:enableCache -and $unoptimizableCache.Contains($fileKey)) {
+            if ($global:enableCache -and -not $isClipExtracted -and $unoptimizableCache.Contains($fileKey)) {
                 $fileCache = $unoptimizableCache[$fileKey]
                 $sigMatch = $false
                 if ($fileCache -is [PSCustomObject] -and $fileCache.psobject.properties.Match('Signature').Count -gt 0) {
@@ -1345,6 +1512,8 @@ if ($totalFiles -eq 0) {
             }
 
             if (-not $unoptimizable) {
+                $totalTargetsChecked = 0
+                $quickTestSkips = 0
                 $attemptedCqs = @{}
                 foreach ($currentTarget in $vmafTargetsToTry) {
                     if ($global:vmafEnabled) {
@@ -1360,7 +1529,7 @@ if ($totalFiles -eq 0) {
                             $activeQualityList = @($optimalCq)
                         } else {
                             Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                            $optimalResult = Find-OptimalCq -InputPath $input -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature
+                            $optimalResult = Find-OptimalCq -InputPath $testPath -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache (if ($isClipExtracted) { $null } else { $unoptimizableCache }) -CacheFile $cacheFile -Signature (if ($isClipExtracted) { $null } else { $fileSignature })
                             $optimalCq = $optimalResult.CQ
                             $lastBestScoreVal = $optimalResult.Score
 
@@ -1393,36 +1562,102 @@ if ($totalFiles -eq 0) {
                         $activeQualityList = $qualityList
                     }
 
-                    for ($i = 0; $i -lt $activeQualityList.Length; $i++) {
+                     for ($i = 0; $i -lt $activeQualityList.Length; $i++) {
                     $q = $activeQualityList[$i]
                     $passInfo = if ($activeQualityList.Length -gt 1) { "(Pass $($i + 1)/$($activeQualityList.Length))" } else { "" }
-                    Write-Host "  $($S.Bullet) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
 
-                    $ffArgs = @("-y", "-loglevel", "error", "-stats")
-                    if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
-                    elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
-
-                    $ffArgs += @("-i", $input, "-c:v", $videoCodec)
-                    switch ($mode) {
-                        "crf" { $ffArgs += @("-crf", $q) }
-                        "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
-                        "qp"  { $ffArgs += @("-qp", $q) }
-                        "global_quality" { $ffArgs += @("-global_quality", $q) }
+                    if ($isClipExtracted) {
+                        $trialOut = Join-Path $global:tempDir "clip_out_${uid}$finalExt"
+                        Write-Host "  $($S.Bullet) [QUICK TEST] Testing [Q:$q] on clip for '$($file.Name)'... " -NoNewline -ForegroundColor Cyan
+                        $totalTargetsChecked++
+                        $ffArgs = @("-y", "-loglevel", "error", "-stats")
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
+                        elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        
+                        $ffArgs += @("-i", $clipPath, "-c:v", $videoCodec)
+                        switch ($mode) {
+                            "crf" { $ffArgs += @("-crf", $q) }
+                            "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
+                            "qp"  { $ffArgs += @("-qp", $q) }
+                            "global_quality" { $ffArgs += @("-global_quality", $q) }
+                        }
+                        if ($global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
+                        $ffArgs += @("-c:a", $targetAudioCodec)
+                        if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
+                        $ffArgs += @($trialOut)
+                        
+                        $global:LASTEXITCODE = 0
+                        & ffmpeg @ffArgs
+                        Write-Host ""
+                        
+                        $ffmpegExit = $global:LASTEXITCODE
+                        if ($ffmpegExit -eq 0 -and (Test-Path -LiteralPath $trialOut)) {
+                            $clipEncodedSize = (Get-Item -LiteralPath $trialOut).Length
+                            if ($clipEncodedSize -lt $clipSize) {
+                                $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                Write-Host "  $($S.Bullet) [QUICK TEST] Clip [Q:$q] succeeded for '$($file.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay)." -ForegroundColor Green
+                                
+                                # Now run final encode on FULL video!
+                                Write-Host "  $($S.Bullet) Running final encode on full video [Q:$q]... " -NoNewline -ForegroundColor Cyan
+                                $ffArgsFull = @("-y", "-loglevel", "error", "-stats")
+                                if ($videoCodec -match "nvenc") { $ffArgsFull += @("-hwaccel","cuda") }
+                                elseif ($videoCodec -match "qsv") { $ffArgsFull += @("-hwaccel","qsv") }
+                                $ffArgsFull += @("-i", $input, "-c:v", $videoCodec)
+                                switch ($mode) {
+                                    "crf" { $ffArgsFull += @("-crf", $q) }
+                                    "cq"  { $ffArgsFull += @("-cq", $q, "-b:v", "0") }
+                                    "qp"  { $ffArgsFull += @("-qp", $q) }
+                                    "global_quality" { $ffArgsFull += @("-global_quality", $q) }
+                                }
+                                if ($global:preset) { $ffArgsFull += @("-preset", $global:preset) }
+                                if ($videoCodec -match "nvenc") { $ffArgsFull += @("-spatial_aq","1","-aq-strength","8") }
+                                $ffArgsFull += @("-c:a", $targetAudioCodec)
+                                if ($targetAudioBitrate) { $ffArgsFull += @("-b:a", $targetAudioBitrate) }
+                                $ffArgsFull += @($tempOutput)
+                                
+                                $global:LASTEXITCODE = 0
+                                & ffmpeg @ffArgsFull
+                                Write-Host ""
+                                $ffmpegExit = $global:LASTEXITCODE
+                            } else {
+                                $clipEncSizeDisp = if ($clipEncodedSize -gt 1MB) { "$((($clipEncodedSize)/1MB).ToString('F2')) MB" } else { "$((($clipEncodedSize)/1KB).ToString('F2')) KB" }
+                                Write-Host "  $($S.Bullet) [QUICK TEST] Clip [Q:$q] failed size check for '$($file.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay). Skipping." -ForegroundColor Yellow
+                                $quickTestSkips++
+                                if (Test-Path -LiteralPath $trialOut) { Remove-Item -LiteralPath $trialOut -Force }
+                                continue
+                            }
+                            if (Test-Path -LiteralPath $trialOut) { Remove-Item -LiteralPath $trialOut -Force }
+                        } else {
+                            Write-Host "     Clip encode failed or errored ($ffmpegExit)" -ForegroundColor Red
+                            if (Test-Path -LiteralPath $trialOut) { Remove-Item -LiteralPath $trialOut -Force }
+                            continue
+                        }
+                    } else {
+                        Write-Host "  $($S.Bullet) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
+                        $ffArgs = @("-y", "-loglevel", "error", "-stats")
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
+                        elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        
+                        $ffArgs += @("-i", $input, "-c:v", $videoCodec)
+                        switch ($mode) {
+                            "crf" { $ffArgs += @("-crf", $q) }
+                            "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
+                            "qp"  { $ffArgs += @("-qp", $q) }
+                            "global_quality" { $ffArgs += @("-global_quality", $q) }
+                        }
+                        if ($global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
+                        $ffArgs += @("-c:a", $targetAudioCodec)
+                        if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
+                        $ffArgs += @($tempOutput)
+                        
+                        $global:currentTempOutput = $tempOutput
+                        $global:LASTEXITCODE = 0
+                        & ffmpeg @ffArgs
+                        $ffmpegExit = $global:LASTEXITCODE
+                        Write-Host ""
                     }
-
-                    if ($global:preset) { $ffArgs += @("-preset", $global:preset) }
-                    if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
-
-                    $ffArgs += @("-c:a", $targetAudioCodec)
-                    if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
-                    $ffArgs += @($tempOutput)
-
-                    $global:currentTempOutput = $tempOutput
-                    $global:LASTEXITCODE = 0
-                    & ffmpeg @ffArgs
-
-                    $ffmpegExit = $global:LASTEXITCODE
-                    Write-Host ""
 
                     # Verification
                     $fileReady = $false
@@ -1493,6 +1728,12 @@ if ($totalFiles -eq 0) {
 
             if ($aborted) { break }
 
+            if (-not $success -and $unoptReason -eq "Larger than source") {
+                if ($quickTestSkips -gt 0 -and $quickTestSkips -eq $totalTargetsChecked) {
+                    $unoptReason = "Skipped (Quick Test)"
+                }
+            }
+
             if ($success) {
                 try {
                     if ($onSuccessAction -eq "Replace Original") {
@@ -1508,37 +1749,48 @@ if ($totalFiles -eq 0) {
             } elseif ($unoptimizable) {
                 if (Test-Path -LiteralPath $tempOutput) { Remove-Item -LiteralPath $tempOutput -Force }
                 
-                switch ($unoptAction) {
-                    "Move to 'Unoptimizable'" {
-                        $unoptDir = Join-Path $dir "Unoptimizable"
-                        if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
-                        $dest = Join-Path $unoptDir $file.Name
-                        Move-Item -LiteralPath $input -Destination $dest -Force
-                        Write-Host "     Moved to 'Unoptimizable' folder" -ForegroundColor Gray
-                    }
-                    "Move to Custom Folder..." {
-                        if ($unoptCustomFolder) { 
-                            $dest = Join-Path $unoptCustomFolder $file.Name
+                if ($unoptReason -eq "Skipped (Quick Test)") {
+                    Write-Host "     Skipped due to Quick Test size check (original file kept)." -ForegroundColor Yellow
+                    Add-Content -Path $logFile -Value "[SKIP] $($file.Name) (Quick Test Skip)"
+                    $failedCount++
+                    Save-UnoptimizableCache -CacheFile $cacheFile -Cache $unoptimizableCache -Path $input -Signature $fileSignature -SettingsKey $currentSettingsKey -Reason $unoptReason
+                } else {
+                    switch ($unoptAction) {
+                        "Move to 'Unoptimizable'" {
+                            $unoptDir = Join-Path $dir "Unoptimizable"
+                            if (-not (Test-Path -LiteralPath $unoptDir)) { New-Item -ItemType Directory -Path $unoptDir | Out-Null }
+                            $dest = Join-Path $unoptDir $file.Name
                             Move-Item -LiteralPath $input -Destination $dest -Force
-                            Write-Host "     Moved to custom folder: $unoptCustomFolder" -ForegroundColor Gray
+                            Write-Host "     Moved to 'Unoptimizable' folder" -ForegroundColor Gray
+                        }
+                        "Move to Custom Folder..." {
+                            if ($unoptCustomFolder) { 
+                                $dest = Join-Path $unoptCustomFolder $file.Name
+                                Move-Item -LiteralPath $input -Destination $dest -Force
+                                Write-Host "     Moved to custom folder: $unoptCustomFolder" -ForegroundColor Gray
+                            }
+                        }
+                        "Delete File" { 
+                            Remove-Item -LiteralPath $input -Force 
+                            Write-Host "     Deleted original file" -ForegroundColor Red
+                        }
+                        "Ignore (Keep Original)" {
+                            Write-Host "     Kept original file" -ForegroundColor Gray
                         }
                     }
-                    "Delete File" { 
-                        Remove-Item -LiteralPath $input -Force 
-                        Write-Host "     Deleted original file" -ForegroundColor Red
+                    $failedCount++
+                    Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) ($unoptReason)"
+                    if ($unoptAction -eq "Ignore (Keep Original)" -and (Test-Path -LiteralPath $input)) {
+                        Save-UnoptimizableCache -CacheFile $cacheFile -Cache $unoptimizableCache -Path $input -Signature $fileSignature -SettingsKey $currentSettingsKey -Reason $unoptReason
                     }
-                    "Ignore (Keep Original)" {
-                        Write-Host "     Kept original file" -ForegroundColor Gray
-                    }
-                }
-                $failedCount++
-                Add-Content -Path $logFile -Value "[UNOPTIMIZABLE] $($file.Name) ($unoptReason)"
-                if ($unoptAction -eq "Ignore (Keep Original)" -and (Test-Path -LiteralPath $input)) {
-                    Save-UnoptimizableCache -CacheFile $cacheFile -Cache $unoptimizableCache -Path $input -Signature $fileSignature -SettingsKey $currentSettingsKey -Reason $unoptReason
                 }
             } else { $skippedCount++ }
+            if ($clipPath -and (Test-Path -LiteralPath $clipPath)) {
+                try { Remove-Item -LiteralPath $clipPath -Force } catch {}
+            }
         }
     } finally {
+        if ($clipPath -and (Test-Path -LiteralPath $clipPath)) { try { Remove-Item -LiteralPath $clipPath -Force } catch {} }
         if ($global:currentTempOutput -and (Test-Path -LiteralPath $global:currentTempOutput)) { Remove-Item -LiteralPath $global:currentTempOutput -Force }
         
         Write-Host "`n [INFO] Process stopped or finished. Generating summary..." -ForegroundColor Yellow
