@@ -815,12 +815,15 @@ class VideoOptimizerEngine:
                         res['Msg'] = 'Skipped (Quick Test)'
         else:
             active_qualities = config.get('QualityLadder', [23, 26, 29])
+            quick_test_skips = 0
+            total_targets_checked = 0
             for q in active_qualities:
                 if self.stop_requested: break
                 
                 if is_clip_extracted:
                     trial_out = Path(config.get('TempDir', '.')) / f"clip_out_{uid}{container}"
                     self.log(f"[QUICK TEST] Testing CQ {q} on clip for '{file_path.name}'...")
+                    total_targets_checked += 1
                     success = self.execute_encode(clip_path, trial_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, quick_test_dur)
                     if success and trial_out.exists():
                         clip_source_size = clip_path.stat().st_size
