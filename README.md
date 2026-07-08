@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.1.1 (Performance & Speed Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.2.0 (Intelligent Probe Caching Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -8,11 +8,16 @@ A **professional-grade, hardware-accelerated video optimization suite** featurin
 
 ---
 
-## 🚀 Performance & Speed Upgrade (v3.1.1)
+## 🚀 Intelligent Probe Caching (v3.2.0)
 
-This release introduces major under-the-hood optimization and speed enhancements, targeting multi-thread CPU efficiency and Disk I/O reduction during the VMAF search phase.
+This release eliminates **redundant VMAF probe encodes** when the quality ladder steps down through multiple targets for the same file, delivering dramatic speed improvements on difficult-to-optimize files.
 
-### 🌟 New in v3.1.1:
+### 🌟 New in v3.2.0:
+- **In-Session Shared Probe Cache:** When a file's VMAF search steps down through the quality ladder (e.g., Target 95 → 93 → 91 → ...), all CQ→VMAF scores probed in earlier steps are shared with subsequent steps. Previously, boundary probes (CQ 1 and CQ 51) and overlapping search points were redundantly re-encoded on every ladder step — now they return **instantly** from the shared cache.
+- **Cross-Session Probe Persistence (Quick Test Mode):** The persistent on-disk probe cache now works in Quick Test mode. Previously, probe results were discarded between runs for clip-based encodes because the cache key used the temporary clip path. Now it keys on the **original file path**, so VMAF probe results persist across tool sessions.
+- **Zero-Overhead Cache Hits:** Shared cache lookups are O(1) hashtable reads with no disk I/O or FFmpeg invocations. On files that trigger multiple ladder fallbacks, this can save **60–120+ seconds per file**.
+
+### 🚀 Previous Release Features (v3.1.1 — Performance & Speed):
 - **Single-Pass Reference Sample Cache:** Moves VMAF reference sample extraction out of the inner search loop to a single-pass phase per file. Reference segments are extracted exactly once and shared across multiple targets in the VMAF ladder or fallback retries, dramatically reducing disk write overhead and processing duration.
 - **Logical Core Scaling:** Replaces the conservative VMAF thread cap of 4 threads with a `Cores - 2` thread allocation strategy, enabling high-core CPUs (e.g. 12, 16, 24 cores) to compute VMAF scores up to 5x faster by fully utilizing processor capability without locking up GUI/OS responsiveness.
 - **HW-Accelerated Transcode Probing:** Automatically applies hardware-accelerated decode flags (`-hwaccel`) during VMAF quality probing to further reduce CPU bottlenecking on GPU-bound runs.

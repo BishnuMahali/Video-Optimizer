@@ -1,5 +1,5 @@
 # Ultimate Video Optimizer Pro (WPF Edition)
-# Version: 3.1.1
+# Version: 3.2.0
 # MIT License | Copyright (c) 2026 Bishnu Mahali
 
 Add-Type -AssemblyName PresentationFramework
@@ -29,7 +29,7 @@ $Theme = if ($CurrentTheme -eq "Dark") {
 $xaml_str = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ultimate Video Optimizer Pro v3.1.1" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+        Title="Ultimate Video Optimizer Pro v3.2.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
             <Grid>
@@ -532,6 +532,7 @@ $btnStart.Add_Click({
                         }
                     }
 
+                    $sharedProbes = @{}
                     $vmafLoopSuccess = $false
                     $attemptedCqs = @{}
                     $totalTargetsChecked = 0
@@ -581,6 +582,14 @@ $btnStart.Add_Click({
                                      if ($stopSignal[0]) { return $null }
                                      $strCq = [string]$cqVal
                                      
+                                     # Check shared probes first (in-session cross-target cache)
+                                     if ($sharedProbes.ContainsKey([int]$cqVal)) {
+                                         $sharedScore = $sharedProbes[[int]$cqVal]
+                                         Write-Output @{ Type="Log"; Msg="[PROBE] ${passLabel}Shared Cache CQ $cqVal -> VMAF: $([math]::Round($sharedScore,2))" }
+                                         $localProbes[[int]$cqVal] = $sharedScore
+                                         return $sharedScore
+                                     }
+
                                      # Check probe cache first
                                      if ($probeCache -ne $null -and $probeCache.Probes.ContainsKey($strCq)) {
                                          $cachedScore = $probeCache.Probes[$strCq]
@@ -627,6 +636,7 @@ $btnStart.Add_Click({
                                      Write-Output @{ Type="Log"; Msg="[PROBE] ${passLabel}CQ $cqVal -> VMAF: $([math]::Round($avg, 2))" }
                                      
                                      $localProbes[[int]$cqVal] = $avg
+                                     $sharedProbes[[int]$cqVal] = $avg
                                      # Update probe cache
                                      if ($probeCache -ne $null) {
                                          $probeCache.Probes[$strCq] = $avg

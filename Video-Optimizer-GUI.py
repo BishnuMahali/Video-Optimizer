@@ -1,6 +1,6 @@
 import os
 import sys
-# Version: 3.1.1
+# Version: 3.2.0
 import json
 import time
 import uuid
@@ -142,7 +142,7 @@ class VideoOptimizerEngine:
             self.log(f"[FAIL] VMAF calculation failed: {e}")
         return None
 
-    def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None, ref_samples=None):
+    def run_vmaf_search(self, file_path, config, target_vmaf=None, signature=None, ref_samples=None, shared_probes=None, cache_file_path=None):
         cleanup_refs = False
         if ref_samples is None:
             ref_samples = []
@@ -174,7 +174,7 @@ class VideoOptimizerEngine:
 
             # Probe Cache Setup
             probe_key = f"codec={encoder}|preset={preset}|samples={samples_count}|dur={sample_dur}"
-            cache_key = str(file_path).lower()
+            cache_key = str(cache_file_path if cache_file_path else file_path).lower()
             probe_cache = None
             
             if config.get('CacheEnabled') and signature:
@@ -231,6 +231,11 @@ class VideoOptimizerEngine:
                 return 26, 0.0, 0.0, 26
 
             local_probes = {}
+            # Seed from shared probes (in-session cross-target cache)
+            if shared_probes is not None:
+                for k, v in shared_probes.items():
+                    local_probes[int(k)] = v
+            # Seed from persistent probe cache (cross-session)
             if probe_cache is not None and 'Probes' in probe_cache:
                 for k, v in probe_cache['Probes'].items():
                     local_probes[int(k)] = v
@@ -242,11 +247,19 @@ class VideoOptimizerEngine:
                     return None
                 str_cq = str(cq_val)
                 
-                # Check probe cache first
+                # Check shared probes first (in-session cross-target cache)
+                if shared_probes is not None and cq_val in shared_probes:
+                    cached_score = shared_probes[cq_val]
+                    self.log(f"[PROBE] {pass_label}Shared Cache CQ {cq_val} -> VMAF: {cached_score:.2f}")
+                    local_probes[cq_val] = cached_score
+                    return cached_score
+                
+                # Check persistent probe cache (cross-session)
                 if probe_cache is not None and str_cq in probe_cache['Probes']:
                     cached_score = probe_cache['Probes'][str_cq]
                     self.log(f"[PROBE] {pass_label}Cached CQ {cq_val} -> VMAF: {cached_score:.2f}")
                     local_probes[cq_val] = cached_score
+                    if shared_probes is not None: shared_probes[cq_val] = cached_score
                     return cached_score
                 
                 self.log(f"[PROBE] {pass_label}Probing Visual Fidelity at CQ {cq_val}")
@@ -275,6 +288,7 @@ class VideoOptimizerEngine:
                 
                 # Update probe cache
                 local_probes[cq_val] = avg
+                if shared_probes is not None: shared_probes[cq_val] = avg
                 if probe_cache is not None:
                     probe_cache['Probes'][str_cq] = avg
                     if avg > probe_cache.get('MaxAchievableVmaf', 0):
@@ -687,6 +701,7 @@ class VideoOptimizerEngine:
                         self.log(f"[WARN] Failed to extract sample segment {idx}: {e}")
 
                 attempted_cqs = set()
+                shared_probes = {}  # In-session cross-target CQ probe cache
                 total_targets_checked = 0
                 quick_test_skips = 0
                 for target in vmaf_ladder:
@@ -704,7 +719,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None, ref_samples=ref_samples)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature, ref_samples=ref_samples, shared_probes=shared_probes, cache_file_path=str(file_path))
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -725,7 +740,7 @@ class VideoOptimizerEngine:
                             best_cq = max_vmaf_cq
                             res['FinalVmaf'] = f"{max_achievable_vmaf:.1f}"
                         else:
-                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature if not is_clip_extracted else None, ref_samples=ref_samples)
+                            best_cq, best_score_val, max_score_val, max_score_cq = self.run_vmaf_search(test_file, config, target, signature, ref_samples=ref_samples, shared_probes=shared_probes, cache_file_path=str(file_path))
                             res['FinalVmaf'] = f"{best_score_val:.1f}"
                             
                             if max_score_val < min_ceiling:
@@ -998,7 +1013,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro v3.1.1")
+        self.title("Ultimate Video Optimizer Pro v3.2.0")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(

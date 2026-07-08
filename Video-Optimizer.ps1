@@ -1,5 +1,5 @@
 # Ultimate Video Optimizer
-# Version: 3.1.1
+# Version: 3.2.0
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.
@@ -434,7 +434,9 @@ function Find-OptimalCq {
         [hashtable]$FullCache,
         [string]$CacheFile,
         [string]$Signature,
-        [System.Collections.Generic.List[string]]$RefSamples
+        [System.Collections.Generic.List[string]]$RefSamples,
+        [hashtable]$SharedProbes,
+        [string]$CacheFilePath
     )
 
     $refSamples = $RefSamples
@@ -443,7 +445,7 @@ function Find-OptimalCq {
     try {
         Write-Host "  $($S.Bullet) Probing VMAF quality (Target: $TargetVmaf)... " -ForegroundColor Gray
         
-        $fileKey = Get-FileCacheKey $InputPath
+        $fileKey = if ($CacheFilePath) { Get-FileCacheKey $CacheFilePath } else { Get-FileCacheKey $InputPath }
         $probeKey = "codec=$Codec|preset=$Preset|samples=$global:vmafSampleCount|dur=$global:vmafSampleDuration"
         $probeCache = $null
 
@@ -545,6 +547,11 @@ function Find-OptimalCq {
         }
 
         $localProbes = @{}
+        if ($null -ne $SharedProbes) {
+            foreach ($k in $SharedProbes.Keys) {
+                $localProbes[[int]$k] = $SharedProbes[$k]
+            }
+        }
         if ($null -ne $probeCache -and $null -ne $probeCache.Probes) {
             foreach ($k in $probeCache.Probes.Keys) {
                 $localProbes[[int]$k] = $probeCache.Probes[$k]
@@ -555,6 +562,14 @@ function Find-OptimalCq {
         function Invoke-CqProbe {
             param([int]$CqVal, [string]$Label)
             $strCq = [string]$CqVal
+            
+            # Check shared probes first (in-session cross-target cache)
+            if ($null -ne $SharedProbes -and $SharedProbes.ContainsKey($CqVal)) {
+                $sharedScore = $SharedProbes[$CqVal]
+                Write-Host "     ${Label}Shared Cache CQ=$CqVal -> VMAF=$([math]::Round($sharedScore,2))" -ForegroundColor Cyan
+                $localProbes[[int]$CqVal] = $sharedScore
+                return $sharedScore
+            }
             
             # Check probe cache first
             if ($null -ne $probeCache -and $probeCache.Probes.Contains($strCq)) {
@@ -569,6 +584,7 @@ function Find-OptimalCq {
             
             if ($score -gt 0) {
                 $localProbes[[int]$CqVal] = $score
+                if ($null -ne $SharedProbes) { $SharedProbes[$CqVal] = $score }
                 if ($null -ne $probeCache) {
                     $probeCache.Probes[$strCq] = $score
                     if ($score -gt $probeCache.MaxAchievableVmaf) {
@@ -1551,6 +1567,7 @@ if ($totalFiles -eq 0) {
                     }
                 }
 
+                $sharedProbes = @{}
                 $totalTargetsChecked = 0
                 $quickTestSkips = 0
                 $attemptedCqs = @{}
@@ -1568,7 +1585,7 @@ if ($totalFiles -eq 0) {
                             $activeQualityList = @($optimalCq)
                         } else {
                             Write-Host "  $($S.Bullet) Seeking VMAF Target: $currentTarget..." -ForegroundColor Cyan
-                            $optimalResult = Find-OptimalCq -InputPath $testPath -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache (if ($isClipExtracted) { $null } else { $unoptimizableCache }) -CacheFile $cacheFile -Signature (if ($isClipExtracted) { $null } else { $fileSignature }) -RefSamples $refSamples
+                            $optimalResult = Find-OptimalCq -InputPath $testPath -Codec $videoCodec -Preset $global:preset -TargetVmaf $currentTarget -FullCache $unoptimizableCache -CacheFile $cacheFile -Signature $fileSignature -RefSamples $refSamples -SharedProbes $sharedProbes -CacheFilePath $input
                             $optimalCq = $optimalResult.CQ
                             $lastBestScoreVal = $optimalResult.Score
 
