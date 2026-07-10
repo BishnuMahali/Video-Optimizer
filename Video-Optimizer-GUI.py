@@ -550,14 +550,16 @@ class VideoOptimizerEngine:
         signature = f"{file_info['OldSizeBytes']}|{int(file_path.stat().st_mtime)}"
         if config.get('ResumeEnabled') and config.get('Cache'):
             cached = config['Cache'].get(key)
-            if cached and cached.get('Signature') == signature and cached.get('SettingsKey') == config.get('SettingsKey'):
-                if cached.get('Status') == 'Optimized':
-                    self.log("[SKIP] Found in cache with matching settings (Optimized).")
-                    return {'Success': True, 'Msg': 'Cached Skip', 'NewSize': cached.get('NewSize', file_info['OldSizeBytes']), 'FinalVmaf': cached.get('FinalVmaf', '---')}
-                else:
-                    reason = cached.get('Reason', 'Failed Previously')
-                    self.log(f"[SKIP] Found in cache with matching settings ({reason}).")
-                    return {'Success': False, 'Msg': f"Cached Fail: {reason}", 'FinalVmaf': '---'}
+            if cached and cached.get('Signature') == signature:
+                run_cache = cached.get('Runs', {}).get(config.get('SettingsKey'))
+                if run_cache:
+                    if run_cache.get('Status') == 'Optimized':
+                        self.log("[SKIP] Found in cache with matching settings (Optimized).")
+                        return {'Success': True, 'Msg': 'Cached Skip', 'NewSize': run_cache.get('NewSize', file_info['OldSizeBytes']), 'FinalVmaf': run_cache.get('FinalVmaf', '---')}
+                    else:
+                        reason = run_cache.get('Reason', 'Failed Previously')
+                        self.log(f"[SKIP] Found in cache with matching settings ({reason}).")
+                        return {'Success': False, 'Msg': f"Cached Fail: {reason}", 'FinalVmaf': '---'}
 
         # 2. Codec-Aware Skip
         source_codec = self.get_video_codec(file_path)
@@ -885,26 +887,36 @@ class VideoOptimizerEngine:
         # 7. Cache Update
         if config.get('CacheEnabled') and not self.stop_requested:
             cache_entry = config['Cache'].get(key, {})
-            cache_entry.update({
-                'Path': str(file_path),
-                'Signature': signature,
-                'SettingsKey': config.get('SettingsKey')
-            })
+            cache_entry['Path'] = str(file_path)
+            
+            if cache_entry.get('Signature') != signature:
+                cache_entry['Runs'] = {}
+                if 'VmafProbeCache' in cache_entry:
+                    cache_entry['VmafProbeCache'] = {}
+                cache_entry['Signature'] = signature
+                
+            if 'Runs' not in cache_entry:
+                cache_entry['Runs'] = {}
+                
+            settings_key = config.get('SettingsKey')
+            run_data = cache_entry['Runs'].get(settings_key, {})
+            
             if not res['Success'] and "Ignore" in config.get('OnFail', 'Ignore'):
-                cache_entry.update({
+                run_data.update({
                     'Reason': res.get('Msg', 'Unknown'),
                     'LastTried': datetime.now().isoformat()
                 })
-                config['Cache'][key] = cache_entry
             elif res['Success']:
-                cache_entry.update({
+                run_data.update({
                     'Status': 'Optimized',
                     'NewSize': res['NewSize'],
                     'FinalVmaf': res['FinalVmaf']
                 })
-                cache_entry.pop('Reason', None)
-                cache_entry.pop('LastTried', None)
-                config['Cache'][key] = cache_entry
+                run_data.pop('Reason', None)
+                run_data.pop('LastTried', None)
+                
+            cache_entry['Runs'][settings_key] = run_data
+            config['Cache'][key] = cache_entry
             
             try:
                 with open(config['CacheFile'], 'w') as f:
@@ -1743,7 +1755,20 @@ class VideoOptimizerGUI(ctk.CTk):
                     if content:
                         cache_list = json.loads(content)
                         if isinstance(cache_list, list):
-                            config['Cache'] = {item['Path'].lower(): item for item in cache_list if isinstance(item, dict) and 'Path' in item}
+                            config['Cache'] = {}
+                            for item in cache_list:
+                                if isinstance(item, dict) and 'Path' in item:
+                                    key = item['Path'].lower()
+                                    if 'SettingsKey' in item and 'Runs' not in item:
+                                        run_entry = {}
+                                        for field in ['Status', 'NewSize', 'FinalVmaf', 'Reason', 'LastTried']:
+                                            if field in item:
+                                                run_entry[field] = item.pop(field)
+                                        sk = item.pop('SettingsKey')
+                                        item['Runs'] = {sk: run_entry}
+                                    if 'Runs' not in item:
+                                        item['Runs'] = {}
+                                    config['Cache'][key] = item
                         else:
                             self.add_log("[WARN] Cache format invalid, starting fresh.")
             except Exception as e:

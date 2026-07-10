@@ -279,21 +279,27 @@ function Save-UnoptimizableCache {
 
     $key = Get-FileCacheKey $Path
     if (-not $Cache.Contains($key)) {
-        $Cache[$key] = [ordered]@{ Path = $Path }
+        $Cache[$key] = [ordered]@{ Path = $Path; Signature=$Signature; Runs=@{} }
     }
     
     $entry = $Cache[$key]
     
     if ($entry -is [PSCustomObject]) {
-        $entry | Add-Member -MemberType NoteProperty -Name "Signature" -Value $Signature -Force
-        $entry | Add-Member -MemberType NoteProperty -Name "SettingsKey" -Value $SettingsKey -Force
-        $entry | Add-Member -MemberType NoteProperty -Name "Reason" -Value $Reason -Force
-        $entry | Add-Member -MemberType NoteProperty -Name "LastTried" -Value (Get-Date).ToString("o") -Force
+        if (-not $entry.Runs) { $entry | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{} -Force }
+        if ($entry.Signature -ne $Signature) {
+            $entry.Signature = $Signature
+            $entry.Runs = @{}
+            if ($entry.VmafProbeCache) { $entry.VmafProbeCache = @{} }
+        }
+        $entry.Runs[$SettingsKey] = @{ Reason=$Reason; LastTried=(Get-Date).ToString("o") }
     } else {
-        $entry.Signature = $Signature
-        $entry.SettingsKey = $SettingsKey
-        $entry.Reason = $Reason
-        $entry.LastTried = (Get-Date).ToString("o")
+        if (-not $entry.Runs) { $entry.Runs = @{} }
+        if ($entry.Signature -ne $Signature) {
+            $entry.Signature = $Signature
+            $entry.Runs = @{}
+            if ($entry.VmafProbeCache) { $entry.VmafProbeCache = @{} }
+        }
+        $entry.Runs[$SettingsKey] = @{ Reason=$Reason; LastTried=(Get-Date).ToString("o") }
     }
 
     $Cache.Values | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $CacheFile -Encoding UTF8
@@ -1310,6 +1316,13 @@ if (Test-Path -LiteralPath $cacheFile) {
         $cachedItems = @(Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json)
         foreach ($item in $cachedItems) {
             if ($item.Path) {
+                if ($null -ne $item.SettingsKey -and $null -eq $item.Runs) {
+                    $runData = @{}
+                    foreach ($fld in @('Status', 'Reason', 'LastTried')) { if ($null -ne $item.$fld) { $runData[$fld] = $item.$fld; $item.PSObject.Properties.Remove($fld) } }
+                    $item | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{($item.SettingsKey)=$runData}
+                    $item.PSObject.Properties.Remove('SettingsKey')
+                }
+                if ($null -eq $item.Runs) { $item | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{} }
                 $unoptimizableCache[(Get-FileCacheKey $item.Path)] = $item
             }
         }
@@ -1402,11 +1415,14 @@ if ($totalFiles -eq 0) {
             $fileCacheKey = Get-FileCacheKey $input
             $fileSignature = Get-FileSignature $file
             $cachedAttempt = $unoptimizableCache[$fileCacheKey]
-            if ($cachedAttempt -and $cachedAttempt.Signature -eq $fileSignature -and $cachedAttempt.SettingsKey -eq $currentSettingsKey) {
-                Write-Host "  $($S.Bullet) Skipped (already failed with same settings: $($cachedAttempt.Reason))" -ForegroundColor Yellow
-                Add-Content -Path $logFile -Value "[SKIPPED-CACHED] $($file.Name) ($($cachedAttempt.Reason))"
-                $skippedCount++
-                continue
+            if ($cachedAttempt -and $cachedAttempt.Signature -eq $fileSignature) {
+                $runCache = $cachedAttempt.Runs[$currentSettingsKey]
+                if ($null -ne $runCache) {
+                    Write-Host "  $($S.Bullet) Skipped (already failed with same settings: $($runCache.Reason))" -ForegroundColor Yellow
+                    Add-Content -Path $logFile -Value "[SKIPPED-CACHED] $($file.Name) ($($runCache.Reason))"
+                    $skippedCount++
+                    continue
+                }
             }
 
             Write-Host "  $($S.Bullet) Codecs: [V:$vCodec, A:$aCodec]" -ForegroundColor Gray
