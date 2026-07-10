@@ -1228,15 +1228,28 @@ class VideoOptimizerGUI(ctk.CTk):
         self.combo_on_fail.set("Move to 'Unoptimizable'")
         self.combo_on_fail.pack(fill="x", padx=20, pady=5)
 
-        self.chk_resume = ctk.CTkCheckBox(self.sidebar, text="Enable Resume Functionality")
-        self.chk_resume.pack(padx=20, pady=(15, 5), anchor="w")
-        self.chk_resume.select()
-        self.chk_cache = ctk.CTkCheckBox(self.sidebar, text="Enable Cache")
-        self.chk_cache.pack(padx=20, pady=5, anchor="w")
-        self.chk_cache.select()
-        self.chk_log = ctk.CTkCheckBox(self.sidebar, text="Enable Log")
-        self.chk_log.pack(padx=20, pady=5, anchor="w")
+        self.setup_section_label("Session Options")
+        
+        self.frame_cache = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.frame_cache.pack(fill="x", padx=20, pady=2)
+        self.chk_cache_resume = ctk.CTkCheckBox(self.frame_cache, text="Enable Cache & Resume")
+        self.chk_cache_resume.pack(side="left")
+        self.chk_cache_resume.select()
+        self.btn_del_cache = ctk.CTkButton(self.frame_cache, text="🗑️", width=30, fg_color="transparent", hover_color="#c94f4f", text_color=("black", "white"), command=self.clear_cache)
+        self.btn_del_cache.pack(side="right")
+
+        self.frame_log = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.frame_log.pack(fill="x", padx=20, pady=2)
+        self.chk_log = ctk.CTkCheckBox(self.frame_log, text="Enable Session Log")
+        self.chk_log.pack(side="left")
         self.chk_log.select()
+        self.btn_del_log = ctk.CTkButton(self.frame_log, text="🗑️", width=30, fg_color="transparent", hover_color="#c94f4f", text_color=("black", "white"), command=self.delete_log)
+        self.btn_del_log.pack(side="right")
+        self.btn_view_log = ctk.CTkButton(self.frame_log, text="👁️", width=30, fg_color="transparent", hover_color=("#e0e0e0", "#3a3a3a"), text_color=("black", "white"), command=self.view_log)
+        self.btn_view_log.pack(side="right", padx=5)
+        
+        self.btn_clear_all = ctk.CTkButton(self.sidebar, text="Clear Cache & Data", width=140, fg_color="transparent", border_width=1, border_color=("#cccccc", "#444444"), text_color=("#666666", "#aaaaaa"), hover_color="#c94f4f", command=self.clear_all_data)
+        self.btn_clear_all.pack(padx=20, pady=(10, 5), anchor="w")
 
         # --- MAIN CONTENT ---
         self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -1422,9 +1435,54 @@ class VideoOptimizerGUI(ctk.CTk):
             self.cleanup_orphans()
             self.scan_files()
 
+    def clear_cache(self):
+        cache_path = os.path.join(self.entry_path.get(), "__Video-Optimizer__", "Cache.json")
+        if os.path.exists(cache_path):
+            try:
+                os.remove(cache_path)
+                self.add_log("[INFO] Cache deleted successfully.")
+            except Exception as e:
+                self.add_log(f"[WARN] Failed to delete cache: {e}")
+        else:
+            self.add_log("[INFO] Cache file not found.")
+
+    def delete_log(self):
+        log_path = os.path.join(self.entry_path.get(), "__Video-Optimizer__", "Optimization_Log.txt")
+        if os.path.exists(log_path):
+            try:
+                os.remove(log_path)
+                self.add_log("[INFO] Log file deleted successfully.")
+            except Exception as e:
+                self.add_log(f"[WARN] Failed to delete log: {e}")
+        else:
+            self.add_log("[INFO] Log file not found.")
+
+    def view_log(self):
+        log_path = os.path.join(self.entry_path.get(), "__Video-Optimizer__", "Optimization_Log.txt")
+        if os.path.exists(log_path):
+            try:
+                import subprocess
+                subprocess.Popen(['notepad.exe', log_path])
+            except Exception as e:
+                self.add_log(f"[WARN] Failed to open log: {e}")
+        else:
+            self.add_log("[INFO] Log file not found.")
+
+    def clear_all_data(self):
+        work_dir = os.path.join(self.entry_path.get(), "__Video-Optimizer__")
+        if os.path.exists(work_dir):
+            try:
+                import shutil
+                shutil.rmtree(work_dir)
+                self.add_log("[INFO] Completely cleared all cache and data.")
+            except Exception as e:
+                self.add_log(f"[WARN] Failed to clear all data: {e}")
+        else:
+            self.add_log("[INFO] Data folder not found.")
+
     def cleanup_orphans(self):
         try:
-            temp_path = Path(self.entry_path.get()) / ".Video Optimizer" / "temp"
+            temp_path = Path(self.entry_path.get()) / "__Video-Optimizer__" / "temp"
             if temp_path.exists():
                 self.add_log("[INFO] Cleaning up orphaned temporary files...")
                 import shutil
@@ -1521,11 +1579,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'OnSuccess' in config: self.combo_on_success.set(config['OnSuccess'])
                 if 'OnFail' in config: self.combo_on_fail.set(config['OnFail'])
                 if 'Resume' in config:
-                    if config['Resume']: self.chk_resume.select()
-                    else: self.chk_resume.deselect()
-                if 'Cache' in config:
-                    if config['Cache']: self.chk_cache.select()
-                    else: self.chk_cache.deselect()
+                    if config['Resume']: self.chk_cache_resume.select()
+                    else: self.chk_cache_resume.deselect()
                 
                 if 'QuickTestEnabled' in config:
                     if config['QuickTestEnabled']: self.chk_quick_test.select()
@@ -1570,8 +1625,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
                 'OnSuccess': self.combo_on_success.get(),
                 'OnFail': self.combo_on_fail.get(),
-                'Resume': bool(self.chk_resume.get()),
-                'Cache': bool(self.chk_cache.get()),
+                'Resume': bool(self.chk_cache_resume.get()),
+                'Cache': bool(self.chk_cache_resume.get()),
                 'QuickTestEnabled': bool(self.chk_quick_test.get()),
                 'QuickTestDuration': int(self.slider_quick_test.get()),
                 'KnownExtensions': self.engine.known_extensions,
@@ -1712,7 +1767,7 @@ class VideoOptimizerGUI(ctk.CTk):
         settings_key = f"codec={sel_enc['Codec']}|mode={sel_enc['Mode']}|preset={self.combo_preset.get()}|{q_part}|audio={audio}|container={container}"
 
         # Ensure work dir and temp dir
-        work_dir = os.path.join(self.entry_path.get(), ".Video Optimizer")
+        work_dir = os.path.join(self.entry_path.get(), "__Video-Optimizer__")
         if not os.path.exists(work_dir):
             os.makedirs(work_dir)
         temp_dir = os.path.join(work_dir, "temp")
@@ -1736,8 +1791,8 @@ class VideoOptimizerGUI(ctk.CTk):
             "SkipEfficient": bool(self.chk_skip_efficient.get()),
             "OnSuccess": self.combo_on_success.get(),
             "OnFail": self.combo_on_fail.get(),
-            "ResumeEnabled": self.chk_resume.get(),
-            "CacheEnabled": self.chk_cache.get(),
+            "ResumeEnabled": self.chk_cache_resume.get(),
+            "CacheEnabled": self.chk_cache_resume.get(),
             "LogEnabled": self.chk_log.get(),
             "SettingsKey": settings_key,
             "QuickTestEnabled": self.chk_quick_test.get(),
@@ -1893,7 +1948,7 @@ class VideoOptimizerGUI(ctk.CTk):
         
         if self.chk_log.get():
             try:
-                work_dir = os.path.join(self.entry_path.get(), ".Video Optimizer")
+                work_dir = os.path.join(self.entry_path.get(), "__Video-Optimizer__")
                 if os.path.exists(work_dir):
                     log_file = os.path.join(work_dir, "Optimization_Log.txt")
                     with open(log_file, "a", encoding="utf-8") as f:

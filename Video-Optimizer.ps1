@@ -256,7 +256,7 @@ function Cleanup-Orphans {
         [string]$Path
     )
     try {
-        $tempPath = Join-Path $Path ".Video Optimizer\temp"
+        $tempPath = Join-Path $Path "__Video-Optimizer__\temp"
         if (Test-Path -LiteralPath $tempPath -PathType Container) {
             Write-Host " [INFO] Cleaning up orphaned temporary files..." -ForegroundColor Gray
             Get-ChildItem -LiteralPath $tempPath -File | Remove-Item -Force -ErrorAction SilentlyContinue
@@ -1292,7 +1292,7 @@ if (-not (Test-Path -LiteralPath $targetFolder -PathType Container)) {
 }
 
 # Setup quarantine temp folder
-$global:tempDir = Join-Path $targetFolder ".Video Optimizer\temp"
+$global:tempDir = Join-Path $targetFolder "__Video-Optimizer__\temp"
 if (-not (Test-Path -LiteralPath $global:tempDir)) {
     New-Item -ItemType Directory -Path $global:tempDir -Force | Out-Null
 }
