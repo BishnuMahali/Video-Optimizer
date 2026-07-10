@@ -29,7 +29,7 @@ $Theme = if ($CurrentTheme -eq "Dark") {
 $xaml_str = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Ultimate Video Optimizer Pro v3.2.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
+        Title="Ultimate Video Optimizer Pro v3.3.0" Height="920" Width="1200" Background="$($Theme.WindowBg)" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <ControlTemplate x:Key="ComboBoxTemplate" TargetType="ComboBox">
             <Grid>

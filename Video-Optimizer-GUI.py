@@ -1028,7 +1028,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Ultimate Video Optimizer Pro v3.2.0")
+        self.title("Ultimate Video Optimizer Pro v3.3.0")
         self.geometry("1200x900")
 
         self.engine = VideoOptimizerEngine(

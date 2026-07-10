@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.2.0 (Intelligent Probe Caching Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.3.0 (Multi-Run Cache & UI Refactor Edition)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -8,11 +8,18 @@ A **professional-grade, hardware-accelerated video optimization suite** featurin
 
 ---
 
-## 🚀 Intelligent Probe Caching (v3.2.0)
+## 🚀 Multi-Run History Cache & UI Refactor (v3.3.0)
 
-This release eliminates **redundant VMAF probe encodes** when the quality ladder steps down through multiple targets for the same file, delivering dramatic speed improvements on difficult-to-optimize files.
+This release implements an advanced **Multi-Run History Architecture** to the cache system alongside a massive **Quality-of-Life UI UX Refactor** across all GUI engines.
 
-### 🌟 New in v3.2.0:
+### 🌟 New in v3.3.0:
+- **Multi-Run Cache Dictionaries:** The persistent `Cache.json` system now groups historical outcomes by their exact `SettingsKey`. You can seamlessly flip back and forth between different combinations (like VMAF Mode and Hard CQ Mode) on the same file without overwriting your cache history. The engine instantly remembers previous failures/successes for every specific configuration!
+- **Zero-Friction UI:** The redundant 'Enable Cache' and 'Enable Resume' checkboxes have been consolidated into a single predictable `Enable Cache & Resume` setting.
+- **Icon-Driven Granular Purges:** Added native `🗑️` (Delete) and `👁️` (View) interaction icons next to the session options, letting you instantly clear out old cache configurations or pop open the current session's log file without digging through directories.
+- **Global Factory Reset:** Added a subtle "Clear Cache & Data" master button that safely wipes the entire working directory out of existence in one click.
+- **Aesthetic Directory Renaming:** Rebranded the somewhat glitchy-looking `.Video Optimizer` hidden directory to a much cleaner `__Video-Optimizer__` prefix which automatically sorts to the top of your folders.
+
+### 🚀 Previous Release Features (v3.2.0 - Intelligent Probe Caching):
 - **In-Session Shared Probe Cache:** When a file's VMAF search steps down through the quality ladder (e.g., Target 95 → 93 → 91 → ...), all CQ→VMAF scores probed in earlier steps are shared with subsequent steps. Previously, boundary probes (CQ 1 and CQ 51) and overlapping search points were redundantly re-encoded on every ladder step — now they return **instantly** from the shared cache.
 - **Cross-Session Probe Persistence (Quick Test Mode):** The persistent on-disk probe cache now works in Quick Test mode. Previously, probe results were discarded between runs for clip-based encodes because the cache key used the temporary clip path. Now it keys on the **original file path**, so VMAF probe results persist across tool sessions.
 - **Zero-Overhead Cache Hits:** Shared cache lookups are O(1) hashtable reads with no disk I/O or FFmpeg invocations. On files that trigger multiple ladder fallbacks, this can save **60–120+ seconds per file**.
