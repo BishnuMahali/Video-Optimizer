@@ -1015,6 +1015,7 @@ class VideoOptimizerEngine:
                         'Saving': '---',
                         'Status': 'Queued'
                     })
+        files.sort(key=lambda x: x['OldSizeBytes'], reverse=True)
         return files
 
     def format_bytes(self, size):

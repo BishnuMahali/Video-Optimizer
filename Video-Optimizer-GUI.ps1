@@ -164,7 +164,7 @@ function Update-PresetList {
 function Scan-Files {
     $path=$txtPath.Text; if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) { return }
     $files=Get-ChildItem -LiteralPath $path -File -Recurse:$chkRecursive.IsChecked | Where-Object { $knownVideoExtensions -contains $_.Extension.ToLower() }
-    $global:videoFiles = $files | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; FullName=$_.FullName; Directory=$_.DirectoryName; Extension=$_.Extension; OldSize=(Format-Bytes $_.Length); OldSizeBytes=$_.Length; NewSize="---"; Saving="---"; Status="Queued" } }
+    $global:videoFiles = $files | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; FullName=$_.FullName; Directory=$_.DirectoryName; Extension=$_.Extension; OldSize=(Format-Bytes $_.Length); OldSizeBytes=$_.Length; NewSize="---"; Saving="---"; Status="Queued" } } | Sort-Object -Property OldSizeBytes -Descending
     $dgFiles.ItemsSource=[System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]$global:videoFiles; $statFiles.Text=$global:videoFiles.Count
 }
 

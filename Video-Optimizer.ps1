@@ -1347,7 +1347,7 @@ $gciArgs = @{
 }
 if ($recursive) { $gciArgs.Recurse = $true }
 
-$files = @(Get-ChildItem @gciArgs)
+$files = @(Get-ChildItem @gciArgs | Sort-Object Length -Descending)
 $totalFiles = $files.Count
 $qualityList = $quality -split ','
 $currentFileIndex = 0
