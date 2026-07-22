@@ -129,6 +129,25 @@ class VideoOptimizerEngine:
         except:
             return "unknown"
 
+    def get_pixel_format(self, file_path):
+        try:
+            args = ['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=pix_fmt', '-of', 'default=noprint_wrappers=1:nokey=1', str(file_path)]
+            result = subprocess.run(args, capture_output=True, text=True, check=True)
+            return result.stdout.strip().lower()
+        except:
+            return "unknown"
+
+    def has_alpha_channel(self, file_path):
+        import re
+        pix_fmt = self.get_pixel_format(file_path)
+        codec = self.get_video_codec(file_path)
+        alpha_formats = re.compile(r'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya')
+        if alpha_formats.search(pix_fmt):
+            return True, pix_fmt, codec
+        if 'prores' in codec and '444' in pix_fmt:
+            return True, pix_fmt, codec
+        return False, pix_fmt, codec
+
     def calculate_vmaf(self, reference, distorted):
         threads = max(1, os.cpu_count() - 2)
         args = ['ffmpeg', '-i', str(distorted), '-i', str(reference), '-filter_complex', f'libvmaf=n_threads={threads}', '-f', 'null', '-']
@@ -569,6 +588,22 @@ class VideoOptimizerEngine:
                 self.log(f"[SKIP] Source is already efficient ({source_codec}).")
                 return {'Success': True, 'Msg': 'Already Efficient', 'NewSize': file_info['OldSizeBytes'], 'FinalVmaf': '---'}
 
+        # 2b. Transparency Detection
+        has_alpha, pix_fmt, alpha_codec = self.has_alpha_channel(file_path)
+        if has_alpha:
+            self.log(f"[INFO] Alpha channel detected (pix_fmt: {pix_fmt}, codec: {alpha_codec}).")
+            if config.get('PreserveAlpha', True):
+                self.log("[INFO] Switching to VP9 (libvpx-vp9) with alpha-aware pixel format.")
+                config = dict(config)  # shallow copy to avoid mutating shared config
+                config['Encoder'] = 'libvpx-vp9'
+                config['Mode'] = 'crf'
+                config['Container'] = '.webm'
+                config['AlphaPreserved'] = True
+                target_codec = 'libvpx-vp9'
+            elif config.get('SkipAlpha', False):
+                self.log("[SKIP] File has transparency and selected encoder doesn't support it.")
+                return {'Success': False, 'Msg': 'Skipped (Transparent)', 'FinalVmaf': '---'}
+
         res = {'Success': False, 'NewSize': 0, 'Msg': 'Failed', 'FinalVmaf': '---'}
         
         container = config.get('Container', '.mp4')
@@ -953,6 +988,10 @@ class VideoOptimizerEngine:
         if 'nvenc' in target_codec:
             ff_args += ['-spatial_aq', '1', '-aq-strength', '8']
         
+        # VP9 Alpha Channel Preservation
+        if config.get('AlphaPreserved'):
+            ff_args += ['-pix_fmt', 'yuva420p']
+        
         ff_args += target_audio_args
         ff_args.append(str(temp_out))
         
@@ -1147,6 +1186,13 @@ class VideoOptimizerGUI(ctk.CTk):
         self.chk_skip_efficient = ctk.CTkCheckBox(self.sidebar, text="Skip Efficient Codecs (HEVC/AV1)")
         self.chk_skip_efficient.pack(padx=20, pady=5, anchor="w")
         self.chk_skip_efficient.select()
+
+        self.chk_preserve_alpha = ctk.CTkCheckBox(self.sidebar, text="Preserve Transparency (VP9)")
+        self.chk_preserve_alpha.pack(padx=20, pady=5, anchor="w")
+        self.chk_preserve_alpha.select()
+
+        self.chk_skip_alpha = ctk.CTkCheckBox(self.sidebar, text="Skip If Alpha Unsupported")
+        self.chk_skip_alpha.pack(padx=20, pady=5, anchor="w")
         
         self.chk_vmaf = ctk.CTkCheckBox(self.sidebar, text="Enable Advanced VMAF", text_color="#2DA44E", font=ctk.CTkFont(weight="bold"), command=self.toggle_vmaf_card)
         self.chk_vmaf.pack(padx=20, pady=5, anchor="w")
@@ -1577,6 +1623,12 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'SkipEfficient' in config:
                     if config['SkipEfficient']: self.chk_skip_efficient.select()
                     else: self.chk_skip_efficient.deselect()
+                if 'PreserveAlpha' in config:
+                    if config['PreserveAlpha']: self.chk_preserve_alpha.select()
+                    else: self.chk_preserve_alpha.deselect()
+                if 'SkipAlpha' in config:
+                    if config['SkipAlpha']: self.chk_skip_alpha.select()
+                    else: self.chk_skip_alpha.deselect()
                 if 'OnSuccess' in config: self.combo_on_success.set(config['OnSuccess'])
                 if 'OnFail' in config: self.combo_on_fail.set(config['OnFail'])
                 if 'Resume' in config:
@@ -1624,6 +1676,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'Preset': self.combo_preset.get(),
                 'Audio': self.combo_audio.get(),
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
+                'PreserveAlpha': bool(self.chk_preserve_alpha.get()),
+                'SkipAlpha': bool(self.chk_skip_alpha.get()),
                 'OnSuccess': self.combo_on_success.get(),
                 'OnFail': self.combo_on_fail.get(),
                 'Resume': bool(self.chk_cache_resume.get()),
@@ -1790,6 +1844,8 @@ class VideoOptimizerGUI(ctk.CTk):
             "Container": container,
             "Audio": audio,
             "SkipEfficient": bool(self.chk_skip_efficient.get()),
+            "PreserveAlpha": bool(self.chk_preserve_alpha.get()),
+            "SkipAlpha": bool(self.chk_skip_alpha.get()),
             "OnSuccess": self.combo_on_success.get(),
             "OnFail": self.combo_on_fail.get(),
             "ResumeEnabled": self.chk_cache_resume.get(),

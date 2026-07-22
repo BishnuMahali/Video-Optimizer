@@ -95,6 +95,8 @@ $global:knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv',
 $global:knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.lnk', '.exe', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.cfa', '.pek', '.ffx', '.prfpset', '.ds_store', '.setting', '.drp', '.cube', '.url', '.drfx', '.ttf', '.otf', '.eot', '.woff', '.woff2', '.fon', '.ttc', '.compositefont', '.dat', '.htm', '.eps', '.jfif', '.avif', '.sfk', '.mogrt', '.prproj', '.aep', '.aegraphic', '.aif', '.atn', '.abr', '.grd', '.pat', '.asl', '.settings', '.zxp', '.rtf', '.plp', '.apk', '.docx', '.atom')
 $global:efficientCodecs = @('hevc', 'h265', 'av1')
 $global:skipEfficient = $true
+$global:preserveAlpha = $true
+$global:skipAlpha = $false
 $global:enableCache = $true
 
 # --- VMAF Variables ---
@@ -147,6 +149,8 @@ function Save-Config {
         KnownIgnoredExtensions = $global:knownIgnoredExtensions
         EfficientCodecs   = $global:efficientCodecs
         EnableCache       = $global:enableCache
+        PreserveAlpha     = $global:preserveAlpha
+        SkipAlpha         = $global:skipAlpha
         QuickTestEnabled   = $global:quickTestEnabled
         QuickTestDuration  = $global:quickTestDuration
     }
@@ -180,6 +184,8 @@ function Load-Config {
             if ($config.UnoptCustomFolder) { $global:unoptCustomFolder = $config.UnoptCustomFolder }
             if ($null -ne $config.SkipEfficient) { $global:skipEfficient = [bool]$config.SkipEfficient }
             if ($null -ne $config.EnableCache) { $global:enableCache = [bool]$config.EnableCache }
+            if ($null -ne $config.PreserveAlpha) { $global:preserveAlpha = [bool]$config.PreserveAlpha }
+            if ($null -ne $config.SkipAlpha) { $global:skipAlpha = [bool]$config.SkipAlpha }
             if ($null -ne $config.QuickTestEnabled) { $global:quickTestEnabled = [bool]$config.QuickTestEnabled }
             if ($config.QuickTestDuration) { $global:quickTestDuration = [int]$config.QuickTestDuration }
             if ($config.KnownVideoExtensions) { $global:knownVideoExtensions = @($config.KnownVideoExtensions) }
@@ -877,6 +883,12 @@ while ($runningMenu) {
         $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
         $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
         
+        $preserveAlphaDisplay = if ($global:preserveAlpha) { 'Yes' } else { 'No' }
+        $items += @{ Label = "Preserve Transparency"; Value = $preserveAlphaDisplay; Hint = "Auto-switch to VP9 for files with alpha channels." }
+
+        $skipAlphaDisplay = if ($global:skipAlpha) { 'Yes' } else { 'No' }
+        $items += @{ Label = "Skip Transparent Files"; Value = $skipAlphaDisplay; Hint = "Skip files with alpha if encoder doesn't support it." }
+        
         $quickTestDisplay = if ($global:quickTestEnabled) { "Enabled ($($global:quickTestDuration)s)" } else { "Disabled" }
         $items += @{ Label = "Quick Test Mode"; Value = $quickTestDisplay; Hint = "Pre-tests quality targets on a short representative clip to ensure size savings." }
         
@@ -965,6 +977,8 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
+                "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
+                "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
                 "Quick Test Mode" {
                     $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
                     $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
@@ -1055,6 +1069,8 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
+                "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
+                "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
                 "Quick Test Mode" {
                     $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
                     $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
@@ -1186,6 +1202,9 @@ while ($runningMenu) {
                     switch ($itemLabel) {
                         "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
                         "Recursive" { $global:recursive = -not $global:recursive }
+                        "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
+                        "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
+                        "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
                         "Quick Test Mode" {
                             Write-Host "`n"
                             $newDur = Read-Host "Enter Quick Test Duration in seconds (5-60) or 0 to disable"
@@ -1410,6 +1429,24 @@ if ($totalFiles -eq 0) {
                 Write-Host "  $($S.Bullet) Skipped (already efficient: $vCodec)" -ForegroundColor Gray
                 $skippedCount++
                 continue
+            }
+
+            # Transparency Detection
+            $pixFmt = (ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$input" 2>$null | Out-String).Trim()
+            $hasAlpha = ($pixFmt -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya') -or ($vCodec -match 'prores' -and $pixFmt -match '444')
+            if ($hasAlpha) {
+                Write-Log "[INFO] Alpha channel detected (pix_fmt: $pixFmt, codec: $vCodec)." $logFile $logEnabled
+                if ($preserveAlpha) {
+                    Write-Log "[INFO] Switching to VP9 (libvpx-vp9) to preserve transparency." $logFile $logEnabled
+                    $videoCodec = "libvpx-vp9"
+                    $mode = "crf"
+                    $outputExt = ".webm"
+                } elseif ($skipAlpha) {
+                    Write-Host "  $($S.Bullet) Skipped (transparent file, encoder unsupported)" -ForegroundColor Yellow
+                    Write-Log "[SKIP] Transparent file skipped." $logFile $logEnabled
+                    $skippedCount++
+                    continue
+                }
             }
 
             $fileCacheKey = Get-FileCacheKey $input
