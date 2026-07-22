@@ -18,6 +18,7 @@ This release implements an advanced **Multi-Run History Architecture** to the ca
 - **Icon-Driven Granular Purges:** Added native `🗑️` (Delete) and `👁️` (View) interaction icons next to the session options, letting you instantly clear out old cache configurations or pop open the current session's log file without digging through directories.
 - **Global Factory Reset:** Added a subtle "Clear Cache & Data" master button that safely wipes the entire working directory out of existence in one click.
 - **Aesthetic Directory Renaming:** Rebranded the somewhat glitchy-looking `.Video Optimizer` hidden directory to a much cleaner `__Video-Optimizer__` prefix which automatically sorts to the top of your folders.
+- **Unified Transparent Video Handling:** Replaced disjointed alpha-channel checkboxes with a clean 4-state intelligent menu across all engines. Effortlessly select between preserving transparency via lossless VP9 (`.webm`) or ProRes 4444 (`.mov`), safely skipping the files entirely, or forcefully flattening them to standard backgrounds to maximize space savings.
 
 ### 🚀 Previous Release Features (v3.2.0 - Intelligent Probe Caching):
 - **In-Session Shared Probe Cache:** When a file's VMAF search steps down through the quality ladder (e.g., Target 95 → 93 → 91 → ...), all CQ→VMAF scores probed in earlier steps are shared with subsequent steps. Previously, boundary probes (CQ 1 and CQ 51) and overlapping search points were redundantly re-encoded on every ladder step — now they return **instantly** from the shared cache.
