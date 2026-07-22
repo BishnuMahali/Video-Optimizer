@@ -393,9 +393,11 @@ function Get-VmafScore {
     $tempFolder = if ($global:tempDir) { $global:tempDir } else { $env:TEMP }
 
     try {
+        $isVpx = ($Codec -match "libvpx")
         for ($sIdx = 0; $sIdx -lt $RefSamples.Count; $sIdx++) {
             $sampleSrc = $RefSamples[$sIdx]
-            $sampleEnc = Join-Path $tempFolder "v_e_${sIdx}_${uid}.mkv"
+            $sampleEncExt = if ($isVpx) { ".webm" } else { ".mkv" }
+            $sampleEnc = Join-Path $tempFolder "v_e_${sIdx}_${uid}$sampleEncExt"
             
             try {
                 $activeEnc = ($global:availableEncoders | Where-Object Codec -eq $Codec)
@@ -408,7 +410,12 @@ function Get-VmafScore {
                     "qp"  { $ffArgs += @("-qp", $CQ) }
                     "global_quality" { $ffArgs += @("-global_quality", $CQ) }
                 }
-                if ($Preset) { $ffArgs += @("-preset", $Preset) }
+                if (-not $isVpx -and $Preset) { $ffArgs += @("-preset", $Preset) }
+                if ($isVpx) {
+                    $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "4")
+                    $isAlpha = (ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$sampleSrc" 2>$null | Out-String).Trim() -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya'
+                    if ($isAlpha -and $global:preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                }
                 $ffArgs += $sampleEnc
                 
                 & ffmpeg @ffArgs
@@ -1380,6 +1387,7 @@ if ($totalFiles -eq 0) {
     Write-Host " [INFO] Found $totalFiles files to check." -ForegroundColor Gray
     try {
         foreach ($file in $files) {
+            $threads = [math]::Max(1, [int]$env:NUMBER_OF_PROCESSORS - 2)
             $currentFileIndex++
             if ($file.FullName -eq $logFile) { continue }
             if ($file.FullName -eq $cacheFile) { continue }
@@ -1684,13 +1692,18 @@ if ($totalFiles -eq 0) {
                         elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
                         
                         $ffArgs += @("-i", $clipPath, "-c:v", $videoCodec)
+                        $isVpx = ($videoCodec -match "libvpx")
                         switch ($mode) {
                             "crf" { $ffArgs += @("-crf", $q) }
                             "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
                             "qp"  { $ffArgs += @("-qp", $q) }
                             "global_quality" { $ffArgs += @("-global_quality", $q) }
                         }
-                        if ($global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if (-not $isVpx -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if ($isVpx) {
+                            $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                            if ($hasAlpha -and $preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                        }
                         if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)
                         if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
@@ -1713,13 +1726,18 @@ if ($totalFiles -eq 0) {
                                 if ($videoCodec -match "nvenc") { $ffArgsFull += @("-hwaccel","cuda") }
                                 elseif ($videoCodec -match "qsv") { $ffArgsFull += @("-hwaccel","qsv") }
                                 $ffArgsFull += @("-i", $input, "-c:v", $videoCodec)
+                                $isVpx = ($videoCodec -match "libvpx")
                                 switch ($mode) {
                                     "crf" { $ffArgsFull += @("-crf", $q) }
                                     "cq"  { $ffArgsFull += @("-cq", $q, "-b:v", "0") }
                                     "qp"  { $ffArgsFull += @("-qp", $q) }
                                     "global_quality" { $ffArgsFull += @("-global_quality", $q) }
                                 }
-                                if ($global:preset) { $ffArgsFull += @("-preset", $global:preset) }
+                                if (-not $isVpx -and $global:preset) { $ffArgsFull += @("-preset", $global:preset) }
+                                if ($isVpx) {
+                                    $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                    if ($hasAlpha -and $preserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                }
                                 if ($videoCodec -match "nvenc") { $ffArgsFull += @("-spatial_aq","1","-aq-strength","8") }
                                 $ffArgsFull += @("-c:a", $targetAudioCodec)
                                 if ($targetAudioBitrate) { $ffArgsFull += @("-b:a", $targetAudioBitrate) }
@@ -1749,13 +1767,18 @@ if ($totalFiles -eq 0) {
                         elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
                         
                         $ffArgs += @("-i", $input, "-c:v", $videoCodec)
+                        $isVpx = ($videoCodec -match "libvpx")
                         switch ($mode) {
                             "crf" { $ffArgs += @("-crf", $q) }
                             "cq"  { $ffArgs += @("-cq", $q, "-b:v", "0") }
                             "qp"  { $ffArgs += @("-qp", $q) }
                             "global_quality" { $ffArgs += @("-global_quality", $q) }
                         }
-                        if ($global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if (-not $isVpx -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if ($isVpx) {
+                            $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                            if ($hasAlpha -and $preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                        }
                         if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)
                         if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }

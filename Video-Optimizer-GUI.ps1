@@ -285,6 +285,7 @@ $btnStart.Add_Click({
     
     $job={ param($files, $config, $stopSignal)
         try {
+            $threads = [math]::Max(1, [int]$env:NUMBER_OF_PROCESSORS - 2)
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
             
             function Run-FFmpegWithProgress {
@@ -395,6 +396,11 @@ $btnStart.Add_Click({
                 } 
             }
             
+            $uid = [guid]::NewGuid().ToString().Substring(0,8)
+            $res=@{ Success=$false; NewSize=0; Msg="Failed"; FinalVmaf="---" }
+            $dir=$f.Directory
+            $ext=if($config.Container -eq "Original"){$f.Extension}else{$config.Container}
+            
             # Transparency Detection
             $pixFmt = (& ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
             $sourceCodecName = (& ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
@@ -412,10 +418,7 @@ $btnStart.Add_Click({
                 }
             }
 
-            $uid = [guid]::NewGuid().ToString().Substring(0,8)
-            $res=@{ Success=$false; NewSize=0; Msg="Failed"; FinalVmaf="---" }
-            $dir=$f.Directory
-            $ext=if($config.Container -eq "Original"){$f.Extension}else{$config.Container}
+            $isVpx = ($config.Encoder -match "libvpx")
             $tempOut = Join-Path $config.TempDir "$($f.Name)_$uid.tmp$ext"
             $finalOut=Join-Path $dir ($f.Name.Replace($f.Extension,"")+"_opt"+$ext)
             
@@ -635,10 +638,18 @@ $btnStart.Add_Click({
                                      for ($sIdx = 0; $sIdx -lt $refSamples.Count; $sIdx++) {
                                          if ($stopSignal[0]) { break }
                                          $sampleSrc = $refSamples[$sIdx]
-                                         $sampleEnc = Join-Path $config.TempDir "v_e_${sIdx}_${uid}.mkv"
+                                         $sampleEncExt = if ($isVpx) { ".webm" } else { ".mkv" }
+                                         $sampleEnc = Join-Path $config.TempDir "v_e_${sIdx}_${uid}$sampleEncExt"
                                          
                                          try {
-                                             $encodeArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-i", "$sampleSrc", "-c:v", "$($config.Encoder)", "-preset", "$($config.Preset)", "-$($config.Mode)", "$cqVal", "$sampleEnc")
+                                             $encodeArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-i", "$sampleSrc", "-c:v", "$($config.Encoder)")
+                                             if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $encodeArgs += @("-preset", "$($config.Preset)") }
+                                             $encodeArgs += @("-$($config.Mode)", "$cqVal")
+                                             if ($isVpx) {
+                                                 $encodeArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "4")
+                                                 if ($hasAlpha -and $config.PreserveAlpha) { $encodeArgs += @("-pix_fmt", "yuva420p") }
+                                             }
+                                             $encodeArgs += $sampleEnc
                                              $p = Start-Process -FilePath "ffmpeg" -ArgumentList $encodeArgs -NoNewWindow -Wait -PassThru
                                              if ($p.ExitCode -eq 0 -and (Test-Path $sampleEnc)) {
                                                  $vmafArgs = @("-i", "$sampleEnc", "-i", "$sampleSrc", "-filter_complex", "libvmaf=n_threads=$threads", "-f", "null", "-")
@@ -918,7 +929,11 @@ $btnStart.Add_Click({
                         Write-Output @{ Type="Log"; Msg="[QUICK TEST] Testing VMAF Target $displayTarget (CQ: $bestCQ) on clip for '$($f.Name)'..." }
                         $totalTargetsChecked++
                         $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$clipPath", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
-                        if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                        if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                        if ($isVpx) {
+                            $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                            if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                        }
                         $ffArgs += $target_audio_args
                         $ffArgs += $trialOut
                         
@@ -933,7 +948,11 @@ $btnStart.Add_Click({
                                 # Now run final encode on FULL video!
                                 Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
                                 $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
-                                if ($config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                if ($isVpx) {
+                                    $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                    if ($hasAlpha -and $config.PreserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                }
                                 $ffArgsFull += $target_audio_args
                                 $ffArgsFull += $tempOut
                                 
@@ -972,7 +991,11 @@ $btnStart.Add_Click({
                     } else {
                         Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
                         $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
-                        if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                        if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                        if ($isVpx) {
+                            $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                            if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                        }
                         $ffArgs += $target_audio_args
                         $ffArgs += $tempOut
                         
@@ -1021,7 +1044,11 @@ $btnStart.Add_Click({
                             Write-Output @{ Type="Log"; Msg="[QUICK TEST] Testing CQ $qTrim on clip for '$($f.Name)'..." }
                             $totalTargetsChecked++
                             $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$clipPath", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
-                            if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            if ($isVpx) {
+                                $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            }
                             $ffArgs += $target_audio_args
                             $ffArgs += $trialOut
                             
@@ -1034,7 +1061,11 @@ $btnStart.Add_Click({
                                     Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip CQ $qTrim succeeded for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay)." }
                                     Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (CQ: $qTrim)..." }
                                     $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
-                                    if ($config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                    if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                    if ($isVpx) {
+                                        $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                        if ($hasAlpha -and $config.PreserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                    }
                                     $ffArgsFull += $target_audio_args
                                     $ffArgsFull += $tempOut
                                     
@@ -1070,7 +1101,11 @@ $btnStart.Add_Click({
                         } else {
                             Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode (CQ: $qTrim)..." }
                             $ffArgs = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
-                            if ($config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
+                            if ($isVpx) {
+                                $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            }
                             $ffArgs += $target_audio_args
                             $ffArgs += $tempOut
                             
