@@ -656,9 +656,11 @@ class VideoOptimizerEngine:
         
         # 3. Hardware Decode Detection
         hw_decode_args = []
-        if 'nvenc' in target_codec: hw_decode_args = ['-hwaccel', 'cuda']
-        elif 'qsv' in target_codec: hw_decode_args = ['-hwaccel', 'qsv']
-        elif 'amf' in target_codec: hw_decode_args = ['-hwaccel', 'd3d11va']
+        supported_hw_codecs = ['h264', 'hevc', 'vp9', 'av1', 'mpeg2video', 'vc1']
+        if source_codec in supported_hw_codecs:
+            if 'nvenc' in target_codec: hw_decode_args = ['-hwaccel', 'cuda']
+            elif 'qsv' in target_codec: hw_decode_args = ['-hwaccel', 'qsv']
+            elif 'amf' in target_codec: hw_decode_args = ['-hwaccel', 'd3d11va']
 
         # 4. Audio Compatibility Fallback
         source_audio = self.get_audio_codec(file_path)

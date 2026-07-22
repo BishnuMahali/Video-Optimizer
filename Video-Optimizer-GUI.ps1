@@ -457,9 +457,12 @@ $btnStart.Add_Click({
                     $clipPath = Join-Path $config.TempDir "clip_src_${uid}$($f.Extension)"
                     
                     $hwDecodeArgs = @()
-                    if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
-                    elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
-                    elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                    $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                    if ($supportedHw -contains $sourceCodecName) {
+                        if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                        elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                        elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                    }
                     
                     $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$startTime", "-t", "$quickTestDur", "-i", "$($f.FullName)", "-c", "copy", "$clipPath")
                     
@@ -552,9 +555,12 @@ $btnStart.Add_Click({
                         Write-Output @{ Type="Log"; Msg="[PROBE] Pre-extracting $($samplePoints.Count) reference sample segments..." }
                         
                         $hwDecodeArgs = @()
-                        if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
-                        elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
-                        elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                        $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                        if ($supportedHw -contains $sourceCodecName) {
+                            if ($config.Encoder -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                            elseif ($config.Encoder -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                            elseif ($config.Encoder -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                        }
                         
                         try {
                             for ($sIdx = 0; $sIdx -lt $samplePoints.Count; $sIdx++) {

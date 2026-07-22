@@ -1551,9 +1551,12 @@ if ($totalFiles -eq 0) {
                 $clipPath = Join-Path $global:tempDir "clip_src_${uid}$fileExt"
                 
                 $hwDecodeArgs = @()
-                if ($videoCodec -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
-                elseif ($videoCodec -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
-                elseif ($videoCodec -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                if ($supportedHw -contains $vCodec) {
+                    if ($videoCodec -match "nvenc") { $hwDecodeArgs = @("-hwaccel", "cuda") }
+                    elseif ($videoCodec -match "qsv") { $hwDecodeArgs = @("-hwaccel", "qsv") }
+                    elseif ($videoCodec -match "amf") { $hwDecodeArgs = @("-hwaccel", "d3d11va") }
+                }
                 
                 $extractArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-ss", "$startTime", "-t", "$quickTestDur", "-i", "$input", "-c", "copy", "$clipPath")
                 
@@ -1716,8 +1719,11 @@ if ($totalFiles -eq 0) {
                         Write-Host "  $($S.Bullet) [QUICK TEST] Testing [Q:$q] on clip for '$($file.Name)'... " -NoNewline -ForegroundColor Cyan
                         $totalTargetsChecked++
                         $ffArgs = @("-y", "-loglevel", "error", "-stats")
-                        if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
-                        elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                        if ($supportedHw -contains $vCodec) {
+                            if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
+                            elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        }
                         
                         $ffArgs += @("-i", $clipPath, "-c:v", $videoCodec)
                         $isVpx = ($videoCodec -match "libvpx")
@@ -1753,8 +1759,11 @@ if ($totalFiles -eq 0) {
                                 # Now run final encode on FULL video!
                                 Write-Host "  $($S.Bullet) Running final encode on full video [Q:$q]... " -NoNewline -ForegroundColor Cyan
                                 $ffArgsFull = @("-y", "-loglevel", "error", "-stats")
-                                if ($videoCodec -match "nvenc") { $ffArgsFull += @("-hwaccel","cuda") }
-                                elseif ($videoCodec -match "qsv") { $ffArgsFull += @("-hwaccel","qsv") }
+                                $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                                if ($supportedHw -contains $vCodec) {
+                                    if ($videoCodec -match "nvenc") { $ffArgsFull += @("-hwaccel","cuda") }
+                                    elseif ($videoCodec -match "qsv") { $ffArgsFull += @("-hwaccel","qsv") }
+                                }
                                 $ffArgsFull += @("-i", $input, "-c:v", $videoCodec)
                                 $isVpx = ($videoCodec -match "libvpx")
                                 switch ($mode) {
@@ -1795,8 +1804,11 @@ if ($totalFiles -eq 0) {
                     } else {
                         Write-Host "  $($S.Bullet) Optimizing $passInfo [Q:$q]... " -NoNewline -ForegroundColor Cyan
                         $ffArgs = @("-y", "-loglevel", "error", "-stats")
-                        if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
-                        elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        $supportedHw = @("h264", "hevc", "vp9", "av1", "mpeg2video", "vc1")
+                        if ($supportedHw -contains $vCodec) {
+                            if ($videoCodec -match "nvenc") { $ffArgs += @("-hwaccel","cuda") }
+                            elseif ($videoCodec -match "qsv") { $ffArgs += @("-hwaccel","qsv") }
+                        }
                         
                         $ffArgs += @("-i", $input, "-c:v", $videoCodec)
                         $isVpx = ($videoCodec -match "libvpx")
