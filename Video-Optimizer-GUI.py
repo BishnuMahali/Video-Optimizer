@@ -292,10 +292,20 @@ class VideoOptimizerEngine:
                     try:
                         probe_hw = [] if is_vpx else hw_decode_args
                         encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + probe_hw + ['-i', str(sample_src), '-c:v', encoder]
-                        if not is_vpx and preset and preset != 'none':
+                        
+                        if not is_vpx and encoder != 'prores_ks' and preset and preset != 'none':
                             encode_args += ['-preset', preset]
-                        if config.get('AlphaPreserved') and is_vpx:
-                            encode_args += ['-pix_fmt', 'yuva420p']
+                        
+                        if is_vpx:
+                            threads = str(max(1, os.cpu_count() - 2))
+                            encode_args += ['-row-mt', '1', '-threads', threads, '-cpu-used', '4']
+                        
+                        if encoder == 'prores_ks' and config.get('AlphaPreserved'):
+                            encode_args += ['-profile:v', '4444']
+                            
+                        if config.get('AlphaPreserved') and config.get('AlphaFmt'):
+                            encode_args += ['-pix_fmt', config['AlphaFmt']]
+                            
                         encode_args += [f"-{mode_flag}", str(cq_val), str(sample_enc)]
                         subprocess.run(encode_args, check=True)
                         if self.stop_requested: break
@@ -600,17 +610,32 @@ class VideoOptimizerEngine:
         has_alpha, pix_fmt, alpha_codec = self.has_alpha_channel(file_path)
         if has_alpha:
             self.log(f"[INFO] Alpha channel detected (pix_fmt: {pix_fmt}, codec: {alpha_codec}).")
-            if config.get('PreserveAlpha', True):
+            alpha_handling = config.get('AlphaHandling', 'Preserve (VP9 / .webm)')
+            
+            if alpha_handling == 'Preserve (VP9 / .webm)':
                 self.log("[INFO] Switching to VP9 (libvpx-vp9) with alpha-aware pixel format.")
-                config = dict(config)  # shallow copy to avoid mutating shared config
+                config = dict(config)
                 config['Encoder'] = 'libvpx-vp9'
                 config['Mode'] = 'crf'
                 config['Container'] = '.webm'
                 config['AlphaPreserved'] = True
+                config['AlphaFmt'] = 'yuva420p'
                 target_codec = 'libvpx-vp9'
-            elif config.get('SkipAlpha', False):
-                self.log("[SKIP] File has transparency and selected encoder doesn't support it.")
+            elif alpha_handling == 'Preserve (ProRes / .mov)':
+                self.log("[INFO] Switching to ProRes 4444 (prores_ks) with alpha-aware pixel format.")
+                config = dict(config)
+                config['Encoder'] = 'prores_ks'
+                config['Mode'] = 'qscale:v'  # prores uses qscale instead of crf/cq
+                config['Container'] = '.mov'
+                config['AlphaPreserved'] = True
+                config['AlphaFmt'] = 'yuva444p10le'
+                config['Preset'] = 'none' # ProRes doesn't use presets
+                target_codec = 'prores_ks'
+            elif alpha_handling == 'Skip Transparent Files':
+                self.log("[SKIP] File has transparency and is set to be skipped.")
                 return {'Success': False, 'Msg': 'Skipped (Transparent)', 'FinalVmaf': '---'}
+            else:
+                self.log("[INFO] Flattening transparent file to solid background as requested.")
 
         res = {'Success': False, 'NewSize': 0, 'Msg': 'Failed', 'FinalVmaf': '---'}
         
@@ -988,19 +1013,26 @@ class VideoOptimizerEngine:
     def execute_encode(self, file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, file_duration):
         target_codec = config['Encoder'].lower()
         is_vpx = 'libvpx' in target_codec
-        effective_hw = [] if is_vpx else hw_decode_args
+        effective_hw = [] if (is_vpx or target_codec == 'prores_ks') else hw_decode_args
         ff_args = ['-y', '-loglevel', 'info'] + effective_hw + ['-i', str(file_path), '-c:v', config['Encoder'], f"-{config['Mode']}", str(q)]
         
-        if not is_vpx and config.get('Preset') and config.get('Preset') != 'none':
+        if not is_vpx and target_codec != 'prores_ks' and config.get('Preset') and config.get('Preset') != 'none':
             ff_args += ['-preset', config['Preset']]
+            
+        if is_vpx:
+            threads = str(max(1, os.cpu_count() - 2))
+            ff_args += ['-row-mt', '1', '-threads', threads, '-cpu-used', '2']
         
         # NVENC Visual Tuning
         if 'nvenc' in target_codec:
             ff_args += ['-spatial_aq', '1', '-aq-strength', '8']
         
-        # VP9 Alpha Channel Preservation
-        if config.get('AlphaPreserved'):
-            ff_args += ['-pix_fmt', 'yuva420p']
+        # Alpha Channel Preservation
+        if target_codec == 'prores_ks' and config.get('AlphaPreserved'):
+            ff_args += ['-profile:v', '4444']
+            
+        if config.get('AlphaPreserved') and config.get('AlphaFmt'):
+            ff_args += ['-pix_fmt', config['AlphaFmt']]
         
         ff_args += target_audio_args
         ff_args.append(str(temp_out))
@@ -1197,12 +1229,21 @@ class VideoOptimizerGUI(ctk.CTk):
         self.chk_skip_efficient.pack(padx=20, pady=5, anchor="w")
         self.chk_skip_efficient.select()
 
-        self.chk_preserve_alpha = ctk.CTkCheckBox(self.sidebar, text="Preserve Transparency (VP9)")
-        self.chk_preserve_alpha.pack(padx=20, pady=5, anchor="w")
-        self.chk_preserve_alpha.select()
-
-        self.chk_skip_alpha = ctk.CTkCheckBox(self.sidebar, text="Skip If Alpha Unsupported")
-        self.chk_skip_alpha.pack(padx=20, pady=5, anchor="w")
+        # Alpha Handling Combobox
+        self.alpha_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.alpha_frame.pack(fill="x", padx=20, pady=(5, 10))
+        
+        self.lbl_alpha = ctk.CTkLabel(self.alpha_frame, text="Transparent Video Handling", font=ctk.CTkFont(size=10, weight="bold"))
+        self.lbl_alpha.pack(anchor="w")
+        
+        self.combo_alpha = ctk.CTkComboBox(self.alpha_frame, values=[
+            "Preserve (VP9 / .webm)",
+            "Preserve (ProRes / .mov)",
+            "Skip Transparent Files",
+            "Flatten (Ignore Alpha)"
+        ], width=200)
+        self.combo_alpha.pack(fill="x")
+        self.combo_alpha.set("Preserve (VP9 / .webm)")
         
         self.chk_vmaf = ctk.CTkCheckBox(self.sidebar, text="Enable Advanced VMAF", text_color="#2DA44E", font=ctk.CTkFont(weight="bold"), command=self.toggle_vmaf_card)
         self.chk_vmaf.pack(padx=20, pady=5, anchor="w")
@@ -1633,12 +1674,16 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'SkipEfficient' in config:
                     if config['SkipEfficient']: self.chk_skip_efficient.select()
                     else: self.chk_skip_efficient.deselect()
-                if 'PreserveAlpha' in config:
-                    if config['PreserveAlpha']: self.chk_preserve_alpha.select()
-                    else: self.chk_preserve_alpha.deselect()
-                if 'SkipAlpha' in config:
-                    if config['SkipAlpha']: self.chk_skip_alpha.select()
-                    else: self.chk_skip_alpha.deselect()
+                if 'AlphaHandling' in config:
+                    self.combo_alpha.set(config['AlphaHandling'])
+                # Backwards compatibility
+                elif 'PreserveAlpha' in config or 'SkipAlpha' in config:
+                    if config.get('PreserveAlpha', True):
+                        self.combo_alpha.set('Preserve (VP9 / .webm)')
+                    elif config.get('SkipAlpha', False):
+                        self.combo_alpha.set('Skip Transparent Files')
+                    else:
+                        self.combo_alpha.set('Flatten (Ignore Alpha)')
                 if 'OnSuccess' in config: self.combo_on_success.set(config['OnSuccess'])
                 if 'OnFail' in config: self.combo_on_fail.set(config['OnFail'])
                 if 'Resume' in config:
@@ -1686,8 +1731,7 @@ class VideoOptimizerGUI(ctk.CTk):
                 'Preset': self.combo_preset.get(),
                 'Audio': self.combo_audio.get(),
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
-                'PreserveAlpha': bool(self.chk_preserve_alpha.get()),
-                'SkipAlpha': bool(self.chk_skip_alpha.get()),
+                'AlphaHandling': self.combo_alpha.get(),
                 'OnSuccess': self.combo_on_success.get(),
                 'OnFail': self.combo_on_fail.get(),
                 'Resume': bool(self.chk_cache_resume.get()),

@@ -95,8 +95,9 @@ $global:knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv',
 $global:knownIgnoredExtensions = @('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.lnk', '.exe', '.tif', '.heic', '.ico', '.svg', '.psd', '.ai', '.txt', '.log', '.pdf', '.zip', '.rar', '.7z', '.iso', '.ps1', '.md', '.json', '.csv', '.xml', '.ini', '.cfg', '.yaml', '.yml', '.html', '.css', '.js', '.db', '.sqlite', '.bak', '.nef', '.dng', '.arw', '.xmp', '.mp3', '.wav', '.m4a', '.aac', '.flac', '.cfa', '.pek', '.ffx', '.prfpset', '.ds_store', '.setting', '.drp', '.cube', '.url', '.drfx', '.ttf', '.otf', '.eot', '.woff', '.woff2', '.fon', '.ttc', '.compositefont', '.dat', '.htm', '.eps', '.jfif', '.avif', '.sfk', '.mogrt', '.prproj', '.aep', '.aegraphic', '.aif', '.atn', '.abr', '.grd', '.pat', '.asl', '.settings', '.zxp', '.rtf', '.plp', '.apk', '.docx', '.atom')
 $global:efficientCodecs = @('hevc', 'h265', 'av1')
 $global:skipEfficient = $true
-$global:preserveAlpha = $true
-$global:skipAlpha = $false
+$global:alphaHandlingOptions = @("Preserve (VP9 / .webm)", "Preserve (ProRes / .mov)", "Skip Transparent Files", "Flatten (Ignore Alpha)")
+$global:alphaHandlingIndex = 0
+$global:alphaHandling = $global:alphaHandlingOptions[$global:alphaHandlingIndex]
 $global:enableCache = $true
 
 # --- VMAF Variables ---
@@ -149,8 +150,7 @@ function Save-Config {
         KnownIgnoredExtensions = $global:knownIgnoredExtensions
         EfficientCodecs   = $global:efficientCodecs
         EnableCache       = $global:enableCache
-        PreserveAlpha     = $global:preserveAlpha
-        SkipAlpha         = $global:skipAlpha
+        AlphaHandling     = $global:alphaHandling
         QuickTestEnabled   = $global:quickTestEnabled
         QuickTestDuration  = $global:quickTestDuration
     }
@@ -184,8 +184,11 @@ function Load-Config {
             if ($config.UnoptCustomFolder) { $global:unoptCustomFolder = $config.UnoptCustomFolder }
             if ($null -ne $config.SkipEfficient) { $global:skipEfficient = [bool]$config.SkipEfficient }
             if ($null -ne $config.EnableCache) { $global:enableCache = [bool]$config.EnableCache }
-            if ($null -ne $config.PreserveAlpha) { $global:preserveAlpha = [bool]$config.PreserveAlpha }
-            if ($null -ne $config.SkipAlpha) { $global:skipAlpha = [bool]$config.SkipAlpha }
+            if ($null -ne $config.AlphaHandling) { 
+                $global:alphaHandling = $config.AlphaHandling 
+                $idx = [array]::IndexOf($global:alphaHandlingOptions, $global:alphaHandling)
+                if ($idx -ge 0) { $global:alphaHandlingIndex = $idx }
+            }
             if ($null -ne $config.QuickTestEnabled) { $global:quickTestEnabled = [bool]$config.QuickTestEnabled }
             if ($config.QuickTestDuration) { $global:quickTestDuration = [int]$config.QuickTestDuration }
             if ($config.KnownVideoExtensions) { $global:knownVideoExtensions = @($config.KnownVideoExtensions) }
@@ -396,7 +399,8 @@ function Get-VmafScore {
         $isVpx = ($Codec -match "libvpx")
         for ($sIdx = 0; $sIdx -lt $RefSamples.Count; $sIdx++) {
             $sampleSrc = $RefSamples[$sIdx]
-            $sampleEncExt = if ($isVpx) { ".webm" } else { ".mkv" }
+            $isProRes = ($Codec -eq "prores_ks")
+            $sampleEncExt = if ($isVpx) { ".webm" } elseif ($isProRes) { ".mov" } else { ".mkv" }
             $sampleEnc = Join-Path $tempFolder "v_e_${sIdx}_${uid}$sampleEncExt"
             
             try {
@@ -410,11 +414,22 @@ function Get-VmafScore {
                     "qp"  { $ffArgs += @("-qp", $CQ) }
                     "global_quality" { $ffArgs += @("-global_quality", $CQ) }
                 }
-                if (-not $isVpx -and $Preset) { $ffArgs += @("-preset", $Preset) }
+                if (-not $isVpx -and -not $isProRes -and $Preset) { $ffArgs += @("-preset", $Preset) }
+                
+                $pixFmtRaw = (ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$sampleSrc" 2>$null | Out-String).Trim()
+                $codecNameRaw = (ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$sampleSrc" 2>$null | Out-String).Trim()
+                $isAlpha = ($pixFmtRaw -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya') -or ($codecNameRaw -match 'prores' -and $pixFmtRaw -match '444')
+                $probeAlphaFmt = $null
+                if ($isAlpha) {
+                    if ($global:alphaHandling -match "VP9") { $probeAlphaFmt = "yuva420p" }
+                    elseif ($global:alphaHandling -match "ProRes") { $probeAlphaFmt = "yuva444p10le" }
+                }
+                
                 if ($isVpx) {
                     $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "4")
-                    $isAlpha = (ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$sampleSrc" 2>$null | Out-String).Trim() -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya'
-                    if ($isAlpha -and $global:preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                    if ($probeAlphaFmt) { $ffArgs += @("-pix_fmt", $probeAlphaFmt) }
+                } elseif ($isProRes) {
+                    if ($probeAlphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $probeAlphaFmt) }
                 }
                 $ffArgs += $sampleEnc
                 
@@ -890,11 +905,7 @@ while ($runningMenu) {
         $skipEffDisplay = if ($skipEfficient) { 'Yes' } else { 'No' }
         $items += @{ Label = "Skip Efficient"; Value = $skipEffDisplay; Hint = "Skips files already encoded in HEVC/AV1." }
         
-        $preserveAlphaDisplay = if ($global:preserveAlpha) { 'Yes' } else { 'No' }
-        $items += @{ Label = "Preserve Transparency"; Value = $preserveAlphaDisplay; Hint = "Auto-switch to VP9 for files with alpha channels." }
-
-        $skipAlphaDisplay = if ($global:skipAlpha) { 'Yes' } else { 'No' }
-        $items += @{ Label = "Skip Transparent Files"; Value = $skipAlphaDisplay; Hint = "Skip files with alpha if encoder doesn't support it." }
+        $items += @{ Label = "Transparent Video Handling"; Value = $global:alphaHandling; Hint = "How to handle videos with transparency (alpha channel)." }
         
         $quickTestDisplay = if ($global:quickTestEnabled) { "Enabled ($($global:quickTestDuration)s)" } else { "Disabled" }
         $items += @{ Label = "Quick Test Mode"; Value = $quickTestDisplay; Hint = "Pre-tests quality targets on a short representative clip to ensure size savings." }
@@ -984,8 +995,10 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
-                "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
-                "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
+                "Transparent Video Handling" {
+                    $global:alphaHandlingIndex = ($global:alphaHandlingIndex - 1 + $global:alphaHandlingOptions.Count) % $global:alphaHandlingOptions.Count
+                    $global:alphaHandling = $global:alphaHandlingOptions[$global:alphaHandlingIndex]
+                }
                 "Quick Test Mode" {
                     $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
                     $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
@@ -1076,8 +1089,10 @@ while ($runningMenu) {
             switch ($itemLabel) {
                 "Recursive" { $global:recursive = -not $global:recursive }
                 "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
-                "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
-                "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
+                "Transparent Video Handling" {
+                    $global:alphaHandlingIndex = ($global:alphaHandlingIndex + 1) % $global:alphaHandlingOptions.Count
+                    $global:alphaHandling = $global:alphaHandlingOptions[$global:alphaHandlingIndex]
+                }
                 "Quick Test Mode" {
                     $currDur = if ($global:quickTestEnabled) { $global:quickTestDuration } else { 0 }
                     $idx = [array]::IndexOf($global:quickTestPresets, $currDur)
@@ -1210,8 +1225,10 @@ while ($runningMenu) {
                         "Advanced VMAF" { if ($hasVmaf) { $global:vmafEnabled = -not $global:vmafEnabled } }
                         "Recursive" { $global:recursive = -not $global:recursive }
                         "Skip Efficient" { $global:skipEfficient = -not $global:skipEfficient }
-                        "Preserve Transparency" { $global:preserveAlpha = -not $global:preserveAlpha }
-                        "Skip Transparent Files" { $global:skipAlpha = -not $global:skipAlpha }
+                        "Transparent Video Handling" {
+                            $global:alphaHandlingIndex = ($global:alphaHandlingIndex + 1) % $global:alphaHandlingOptions.Count
+                            $global:alphaHandling = $global:alphaHandlingOptions[$global:alphaHandlingIndex]
+                        }
                         "Quick Test Mode" {
                             Write-Host "`n"
                             $newDur = Read-Host "Enter Quick Test Duration in seconds (5-60) or 0 to disable"
@@ -1442,20 +1459,31 @@ if ($totalFiles -eq 0) {
             # Transparency Detection
             $pixFmt = (ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$input" 2>$null | Out-String).Trim()
             $hasAlpha = ($pixFmt -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya') -or ($vCodec -match 'prores' -and $pixFmt -match '444')
+            $alphaFmt = $null
             if ($hasAlpha) {
                 Write-Log "[INFO] Alpha channel detected (pix_fmt: $pixFmt, codec: $vCodec)." $logFile $logEnabled
-                if ($preserveAlpha) {
+                if ($global:alphaHandling -match "VP9") {
                     Write-Log "[INFO] Switching to VP9 (libvpx-vp9) to preserve transparency." $logFile $logEnabled
                     $videoCodec = "libvpx-vp9"
                     $mode = "crf"
                     $outputExt = ".webm"
-                } elseif ($skipAlpha) {
-                    Write-Host "  $($S.Bullet) Skipped (transparent file, encoder unsupported)" -ForegroundColor Yellow
+                    $alphaFmt = "yuva420p"
+                } elseif ($global:alphaHandling -match "ProRes") {
+                    Write-Log "[INFO] Switching to ProRes (prores_ks) to preserve transparency." $logFile $logEnabled
+                    $videoCodec = "prores_ks"
+                    $mode = "qscale:v"
+                    $outputExt = ".mov"
+                    $alphaFmt = "yuva444p10le"
+                } elseif ($global:alphaHandling -match "Skip") {
+                    Write-Host "  $($S.Bullet) Skipped (transparent file, skipped by user option)" -ForegroundColor Yellow
                     Write-Log "[SKIP] Transparent file skipped." $logFile $logEnabled
                     $skippedCount++
                     continue
                 }
             }
+
+            $isVpx = ($videoCodec -match "libvpx")
+            $isProRes = ($videoCodec -eq "prores_ks")
 
             $fileCacheKey = Get-FileCacheKey $input
             $fileSignature = Get-FileSignature $file
@@ -1699,10 +1727,12 @@ if ($totalFiles -eq 0) {
                             "qp"  { $ffArgs += @("-qp", $q) }
                             "global_quality" { $ffArgs += @("-global_quality", $q) }
                         }
-                        if (-not $isVpx -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if (-not $isVpx -and -not $isProRes -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
                         if ($isVpx) {
                             $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                            if ($hasAlpha -and $preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                        } elseif ($isProRes) {
+                            if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
                         if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)
@@ -1733,10 +1763,12 @@ if ($totalFiles -eq 0) {
                                     "qp"  { $ffArgsFull += @("-qp", $q) }
                                     "global_quality" { $ffArgsFull += @("-global_quality", $q) }
                                 }
-                                if (-not $isVpx -and $global:preset) { $ffArgsFull += @("-preset", $global:preset) }
+                                if (-not $isVpx -and -not $isProRes -and $global:preset) { $ffArgsFull += @("-preset", $global:preset) }
                                 if ($isVpx) {
                                     $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                                    if ($hasAlpha -and $preserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                    if ($alphaFmt) { $ffArgsFull += @("-pix_fmt", $alphaFmt) }
+                                } elseif ($isProRes) {
+                                    if ($alphaFmt) { $ffArgsFull += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                                 }
                                 if ($videoCodec -match "nvenc") { $ffArgsFull += @("-spatial_aq","1","-aq-strength","8") }
                                 $ffArgsFull += @("-c:a", $targetAudioCodec)
@@ -1774,10 +1806,12 @@ if ($totalFiles -eq 0) {
                             "qp"  { $ffArgs += @("-qp", $q) }
                             "global_quality" { $ffArgs += @("-global_quality", $q) }
                         }
-                        if (-not $isVpx -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
+                        if (-not $isVpx -and -not $isProRes -and $global:preset) { $ffArgs += @("-preset", $global:preset) }
                         if ($isVpx) {
                             $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                            if ($hasAlpha -and $preserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                        } elseif ($isProRes) {
+                            if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
                         if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)

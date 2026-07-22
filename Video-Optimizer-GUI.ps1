@@ -80,7 +80,7 @@ $xaml_str = @"
         
         <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="450"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,20,0"><StackPanel>
-                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkQuickTest" Content="Quick Test Mode" IsChecked="True"/><TextBlock Text="Duration:" Margin="20,0,5,0" VerticalAlignment="Center" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblQuickTestVal" Text="25s" VerticalAlignment="Center" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel><Slider x:Name="sliderQuickTest" Minimum="5" Maximum="60" Value="25" SmallChange="1" LargeChange="5" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,0"/><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel><StackPanel Orientation="Horizontal" Margin="0,10,0,0"><CheckBox x:Name="chkPreserveAlpha" Content="Preserve Transparency" IsChecked="True" Margin="0,0,15,0"/><CheckBox x:Name="chkSkipAlpha" Content="Skip If Unsupported" IsChecked="False"/></StackPanel></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkQuickTest" Content="Quick Test Mode" IsChecked="True"/><TextBlock Text="Duration:" Margin="20,0,5,0" VerticalAlignment="Center" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblQuickTestVal" Text="25s" VerticalAlignment="Center" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel><Slider x:Name="sliderQuickTest" Minimum="5" Maximum="60" Value="25" SmallChange="1" LargeChange="5" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,0"/><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel><StackPanel Margin="0,10,0,0"><TextBlock Text="Transparent Video Handling:" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboAlpha"><ComboBoxItem Content="Preserve (VP9 / .webm)" IsSelected="True"/><ComboBoxItem Content="Preserve (ProRes / .mov)"/><ComboBoxItem Content="Skip Transparent Files"/><ComboBoxItem Content="Flatten (Ignore Alpha)"/></ComboBox></StackPanel></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardVmaf"><StackPanel><TextBlock Text="2. ADVANCED VMAF TUNING" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><StackPanel Margin="0,0,0,10"><CheckBox x:Name="chkVmafFallback" Content="Encode with Max VMAF as Fallback" IsChecked="True" Margin="0,0,0,6"/><CheckBox x:Name="chkVmafLadder" Content="Enable Stepping Target" IsChecked="False"/></StackPanel><StackPanel x:Name="panelVmafTarget"><Grid Margin="0,0,0,5"><TextBlock Text="Target Quality (VMAF)" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafTarget" Text="93" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmaf" Minimum="70" Maximum="100" Value="93" Margin="0,0,0,15"/></StackPanel><StackPanel x:Name="panelVmafLadder" Visibility="Collapsed" Margin="0,0,0,15"><TextBlock Text="VMAF Target Ladder (Space/Comma Separated)" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><TextBox x:Name="txtVmafLadder" Text="93" Height="30" Margin="0,0,0,5"/></StackPanel><StackPanel Margin="0,0,0,15"><Grid Margin="0,0,0,5"><TextBlock Text="Minimum VMAF Ceiling" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafCeiling" Text="85" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmafCeiling" Minimum="0" Maximum="100" Value="85"/></StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Samples" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboSamples"><ComboBoxItem Content="1 Sample"/><ComboBoxItem Content="3 Samples (Balanced)" IsSelected="True"/><ComboBoxItem Content="5 Samples"/></ComboBox></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Probe Duration" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboProbeDur"><ComboBoxItem Content="3 Seconds"/><ComboBoxItem Content="5 Seconds" IsSelected="True"/><ComboBoxItem Content="10 Seconds"/></ComboBox></StackPanel></Grid></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardManual" Visibility="Collapsed"><StackPanel><TextBlock Text="2. MANUAL QUALITY LADDER" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><TextBox x:Name="txtQualityLadder" Text="23,26,29" Height="30"/><TextBlock Text="Speed Preset" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,15,0,8"/><ComboBox x:Name="comboPreset"/></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="3. AUDIO &amp; POST-PROCESS" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboAudio" Margin="0,0,0,15"><ComboBoxItem Content="Copy (Original)" IsSelected="True"/><ComboBoxItem Content="AAC (128k)"/><ComboBoxItem Content="AAC (192k)"/></ComboBox><TextBlock Text="On Failure" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboOnFail"><ComboBoxItem Content="Move to 'Unoptimizable'" IsSelected="True"/><ComboBoxItem Content="Delete File"/><ComboBoxItem Content="Ignore (Keep Original)"/></ComboBox></StackPanel></Border>
@@ -114,7 +114,7 @@ if ($null -eq $window) { throw "WPF Window failed to load!" }
 $txtPath=$window.FindName("txtPath"); $btnBrowse=$window.FindName("btnBrowse"); $chkRecursive=$window.FindName("chkRecursive"); $chkVmaf=$window.FindName("chkVmaf"); $cardVmaf=$window.FindName("cardVmaf"); $cardManual=$window.FindName("cardManual"); $comboEncoder=$window.FindName("comboEncoder"); $comboContainer=$window.FindName("comboContainer"); $sliderVmaf=$window.FindName("sliderVmaf"); $lblVmafTarget=$window.FindName("lblVmafTarget"); $comboSamples=$window.FindName("comboSamples"); $comboProbeDur=$window.FindName("comboProbeDur"); $txtQualityLadder=$window.FindName("txtQualityLadder"); $comboPreset=$window.FindName("comboPreset"); $comboAudio=$window.FindName("comboAudio"); $comboOnFail=$window.FindName("comboOnFail"); $chkCacheResume=$window.FindName("chkCacheResume"); $chkLog=$window.FindName("chkLog"); $btnDelCache=$window.FindName("btnDelCache"); $btnDelLog=$window.FindName("btnDelLog"); $btnViewLog=$window.FindName("btnViewLog"); $btnClearAll=$window.FindName("btnClearAll"); $statFiles=$window.FindName("statFiles"); $statSaved=$window.FindName("statSaved"); $statEff=$window.FindName("statEff"); $statVmaf=$window.FindName("statVmaf"); $dgFiles=$window.FindName("dgFiles"); $txtLogs=$window.FindName("txtLogs"); $progressMain=$window.FindName("progressMain"); $lblStatus=$window.FindName("lblStatus"); $btnStart=$window.FindName("btnStart"); $btnStop=$window.FindName("btnStop")
 $chkVmafFallback=$window.FindName("chkVmafFallback"); $chkVmafLadder=$window.FindName("chkVmafLadder"); $panelVmafTarget=$window.FindName("panelVmafTarget"); $panelVmafLadder=$window.FindName("panelVmafLadder"); $txtVmafLadder=$window.FindName("txtVmafLadder"); $sliderVmafCeiling=$window.FindName("sliderVmafCeiling"); $lblVmafCeiling=$window.FindName("lblVmafCeiling")
 $chkQuickTest=$window.FindName("chkQuickTest"); $sliderQuickTest=$window.FindName("sliderQuickTest"); $lblQuickTestVal=$window.FindName("lblQuickTestVal")
-$chkPreserveAlpha=$window.FindName("chkPreserveAlpha"); $chkSkipAlpha=$window.FindName("chkSkipAlpha")
+$comboAlpha=$window.FindName("comboAlpha")
 
 $global:logEnabled=$false; $global:logFilePath=""; $global:videoFiles=@(); $global:stopRequested=$false; $global:StopSignal = New-Object 'bool[]' 1; $global:StopSignal[0] = $false
 $knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg')
@@ -277,8 +277,7 @@ $btnStart.Add_Click({
         QuickTestEnabled=[bool]$chkQuickTest.IsChecked
         QuickTestDuration=[int]$sliderQuickTest.Value
         TempDir=$tempDir
-        PreserveAlpha=[bool]$chkPreserveAlpha.IsChecked
-        SkipAlpha=[bool]$chkSkipAlpha.IsChecked
+        AlphaHandling=$comboAlpha.Text
     }
     $global:processedCount=0; $global:totalSavedBytes=0; $global:totalOriginalBytes=0
     $global:StopSignal[0] = $false
@@ -405,20 +404,29 @@ $btnStart.Add_Click({
             $pixFmt = (& ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
             $sourceCodecName = (& ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim()
             $hasAlpha = ($pixFmt -match 'a$|rgba|bgra|yuva|argb|abgr|gbrap|ya') -or ($sourceCodecName -match 'prores' -and $pixFmt -match '444')
+            $alphaFmt = $null
             if ($hasAlpha) {
                 Write-Output @{ Type="Log"; Msg="[INFO] Alpha channel detected (pix_fmt: $pixFmt, codec: $sourceCodecName)." }
-                if ($config.PreserveAlpha) {
+                if ($config.AlphaHandling -match "VP9") {
                     Write-Output @{ Type="Log"; Msg="[INFO] Switching to VP9 (libvpx-vp9) to preserve transparency." }
                     $config.Encoder = "libvpx-vp9"
                     $config.Mode = "crf"
                     $ext = ".webm"
-                } elseif ($config.SkipAlpha) {
-                    Write-Output @{ Type="Log"; Msg="[SKIP] File has transparency and selected encoder doesn't support it." }
+                    $alphaFmt = "yuva420p"
+                } elseif ($config.AlphaHandling -match "ProRes") {
+                    Write-Output @{ Type="Log"; Msg="[INFO] Switching to ProRes (prores_ks) to preserve transparency." }
+                    $config.Encoder = "prores_ks"
+                    $config.Mode = "qscale:v"
+                    $ext = ".mov"
+                    $alphaFmt = "yuva444p10le"
+                } elseif ($config.AlphaHandling -match "Skip") {
+                    Write-Output @{ Type="Log"; Msg="[SKIP] File has transparency and selected option skips it." }
                     Write-Output @{ Index=$idx; Success=$false; Msg="Skipped (Transparent)"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }; continue
                 }
             }
 
             $isVpx = ($config.Encoder -match "libvpx")
+            $isProRes = ($config.Encoder -eq "prores_ks")
             $tempOut = Join-Path $config.TempDir "$($f.Name)_$uid.tmp$ext"
             $finalOut=Join-Path $dir ($f.Name.Replace($f.Extension,"")+"_opt"+$ext)
             
@@ -638,17 +646,20 @@ $btnStart.Add_Click({
                                      for ($sIdx = 0; $sIdx -lt $refSamples.Count; $sIdx++) {
                                          if ($stopSignal[0]) { break }
                                          $sampleSrc = $refSamples[$sIdx]
-                                         $sampleEncExt = if ($isVpx) { ".webm" } else { ".mkv" }
+                                         $sampleEncExt = if ($isVpx) { ".webm" } elseif ($isProRes) { ".mov" } else { ".mkv" }
                                          $sampleEnc = Join-Path $config.TempDir "v_e_${sIdx}_${uid}$sampleEncExt"
                                          
                                          try {
                                              $encodeArgs = @("-y", "-loglevel", "error") + $hwDecodeArgs + @("-i", "$sampleSrc", "-c:v", "$($config.Encoder)")
-                                             if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $encodeArgs += @("-preset", "$($config.Preset)") }
-                                             $encodeArgs += @("-$($config.Mode)", "$cqVal")
+                                             if (-not $isVpx -and -not $isProRes -and $config.Preset -and $config.Preset -ne "none") { $encodeArgs += @("-preset", "$($config.Preset)") }
+                                             
                                              if ($isVpx) {
-                                                 $encodeArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "4")
-                                                 if ($hasAlpha -and $config.PreserveAlpha) { $encodeArgs += @("-pix_fmt", "yuva420p") }
+                                                 $encodeArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
+                                                 if ($alphaFmt) { $encodeArgs += @("-pix_fmt", $alphaFmt) }
+                                             } elseif ($isProRes) {
+                                                 if ($alphaFmt) { $encodeArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                                              }
+                                             $encodeArgs += @("-$($config.Mode)", "$cqVal")
                                              $encodeArgs += $sampleEnc
                                              $p = Start-Process -FilePath "ffmpeg" -ArgumentList $encodeArgs -NoNewWindow -Wait -PassThru
                                              if ($p.ExitCode -eq 0 -and (Test-Path $sampleEnc)) {
@@ -932,7 +943,9 @@ $btnStart.Add_Click({
                         if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
                         if ($isVpx) {
                             $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                            if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                        } elseif ($isProRes) {
+                            if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
                         $ffArgs += $target_audio_args
                         $ffArgs += $trialOut
@@ -948,10 +961,12 @@ $btnStart.Add_Click({
                                 # Now run final encode on FULL video!
                                 Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (VMAF Target: $displayTarget, CQ: $bestCQ)..." }
                                 $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$bestCQ")
-                                if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                if (-not $isVpx -and -not $isProRes -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
                                 if ($isVpx) {
                                     $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                                    if ($hasAlpha -and $config.PreserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                    if ($alphaFmt) { $ffArgsFull += @("-pix_fmt", $alphaFmt) }
+                                } elseif ($isProRes) {
+                                    if ($alphaFmt) { $ffArgsFull += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                                 }
                                 $ffArgsFull += $target_audio_args
                                 $ffArgsFull += $tempOut
@@ -994,7 +1009,9 @@ $btnStart.Add_Click({
                         if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
                         if ($isVpx) {
                             $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                            if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                            if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                        } elseif ($isProRes) {
+                            if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
                         $ffArgs += $target_audio_args
                         $ffArgs += $tempOut
@@ -1047,7 +1064,9 @@ $btnStart.Add_Click({
                             if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
                             if ($isVpx) {
                                 $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                                if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                                if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                            } elseif ($isProRes) {
+                                if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                             }
                             $ffArgs += $target_audio_args
                             $ffArgs += $trialOut
@@ -1061,10 +1080,12 @@ $btnStart.Add_Click({
                                     Write-Output @{ Type="Log"; Msg="[QUICK TEST] Clip CQ $qTrim succeeded for '$($f.Name)': $clipEncSizeDisp (Source clip: $clipSizeDisplay)." }
                                     Write-Output @{ Type="Log"; Msg="[ENCODE] Running final encode on full video (CQ: $qTrim)..." }
                                     $ffArgsFull = @("-y", "-loglevel", "info", "-stats", "-i", "$($f.FullName)", "-c:v", "$($config.Encoder)", "-$($config.Mode)", "$qTrim")
-                                    if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
+                                    if (-not $isVpx -and -not $isProRes -and $config.Preset -and $config.Preset -ne "none") { $ffArgsFull += @("-preset", $config.Preset) }
                                     if ($isVpx) {
                                         $ffArgsFull += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                                        if ($hasAlpha -and $config.PreserveAlpha) { $ffArgsFull += @("-pix_fmt", "yuva420p") }
+                                        if ($alphaFmt) { $ffArgsFull += @("-pix_fmt", $alphaFmt) }
+                                    } elseif ($isProRes) {
+                                        if ($alphaFmt) { $ffArgsFull += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                                     }
                                     $ffArgsFull += $target_audio_args
                                     $ffArgsFull += $tempOut
@@ -1104,7 +1125,9 @@ $btnStart.Add_Click({
                             if (-not $isVpx -and $config.Preset -and $config.Preset -ne "none") { $ffArgs += @("-preset", $config.Preset) }
                             if ($isVpx) {
                                 $ffArgs += @("-row-mt", "1", "-threads", $threads, "-cpu-used", "2")
-                                if ($hasAlpha -and $config.PreserveAlpha) { $ffArgs += @("-pix_fmt", "yuva420p") }
+                                if ($alphaFmt) { $ffArgs += @("-pix_fmt", $alphaFmt) }
+                            } elseif ($isProRes) {
+                                if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                             }
                             $ffArgs += $target_audio_args
                             $ffArgs += $tempOut
