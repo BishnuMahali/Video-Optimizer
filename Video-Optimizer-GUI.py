@@ -283,12 +283,20 @@ class VideoOptimizerEngine:
                 
                 self.log(f"[PROBE] {pass_label}Probing Visual Fidelity at CQ {cq_val}")
                 scores = []
+                is_vpx = 'libvpx' in encoder
+                probe_ext = '.webm' if is_vpx else '.mkv'
                 for idx, sample_src in enumerate(ref_samples):
                     if self.stop_requested:
                         break
-                    sample_enc = temp_dir / f"v_e_{idx}_{uid}.mkv"
+                    sample_enc = temp_dir / f"v_e_{idx}_{uid}{probe_ext}"
                     try:
-                        encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + hw_decode_args + ['-i', str(sample_src), '-c:v', encoder, '-preset', preset, f"-{mode_flag}", str(cq_val), str(sample_enc)]
+                        probe_hw = [] if is_vpx else hw_decode_args
+                        encode_args = ['ffmpeg', '-y', '-loglevel', 'error'] + probe_hw + ['-i', str(sample_src), '-c:v', encoder]
+                        if not is_vpx and preset and preset != 'none':
+                            encode_args += ['-preset', preset]
+                        if config.get('AlphaPreserved') and is_vpx:
+                            encode_args += ['-pix_fmt', 'yuva420p']
+                        encode_args += [f"-{mode_flag}", str(cq_val), str(sample_enc)]
                         subprocess.run(encode_args, check=True)
                         if self.stop_requested: break
                         score = self.calculate_vmaf(sample_src, sample_enc)
@@ -979,9 +987,11 @@ class VideoOptimizerEngine:
 
     def execute_encode(self, file_path, temp_out, hw_decode_args, target_audio_args, config, q, file_index, total_files, file_duration):
         target_codec = config['Encoder'].lower()
-        ff_args = ['-y', '-loglevel', 'info'] + hw_decode_args + ['-i', str(file_path), '-c:v', config['Encoder'], f"-{config['Mode']}", str(q)]
+        is_vpx = 'libvpx' in target_codec
+        effective_hw = [] if is_vpx else hw_decode_args
+        ff_args = ['-y', '-loglevel', 'info'] + effective_hw + ['-i', str(file_path), '-c:v', config['Encoder'], f"-{config['Mode']}", str(q)]
         
-        if config.get('Preset') and config.get('Preset') != 'none':
+        if not is_vpx and config.get('Preset') and config.get('Preset') != 'none':
             ff_args += ['-preset', config['Preset']]
         
         # NVENC Visual Tuning
