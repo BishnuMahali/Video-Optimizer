@@ -1,5 +1,5 @@
 # Ultimate Video Optimizer
-# Version: 3.2.0
+# Version: 3.3.1
 # MIT License
 # Copyright (c) 2026 Bishnu Mahali
 # See LICENSE file in the repository root for full license text.

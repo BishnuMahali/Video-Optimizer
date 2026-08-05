@@ -1,4 +1,4 @@
-# 🎬 Ultimate Video Optimizer Pro v3.3.0 (Multi-Run Cache & UI Refactor Edition)
+# 🎬 Ultimate Video Optimizer Pro v3.3.1 (Bug Fixes & Stability Updates)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -7,6 +7,11 @@
 A **professional-grade, hardware-accelerated video optimization suite** featuring state-of-the-art visual quality-targeted encoding. This release introduces absolute feature and engine parity across the **Python CustomTkinter GUI**, **PowerShell WPF GUI**, and **PowerShell CLI/TUI**, powered by an advanced two-stage seeking engine.
 
 ---
+
+## 🛠️ Patch Notes (v3.3.1)
+
+- **FFmpeg 9.0 Compatibility**: Fixed an issue where NVENC encoding failed with `Unrecognized option 'spatial_aq'` due to deprecated underscore aliases removed in FFmpeg 9.0.
+- **Cache System Unicode Fix**: Resolved a major issue on Windows where `Cache.json` failed to persist runs for paths containing non-ASCII characters (e.g., Russian, CJK). File encodings have been explicitly set to UTF-8 across both Python and PowerShell caching layers.
 
 ## 🚀 Multi-Run History Cache & UI Refactor (v3.3.0)
 
