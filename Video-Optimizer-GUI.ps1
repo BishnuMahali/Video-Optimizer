@@ -230,7 +230,7 @@ $btnStart.Add_Click({
     if ($global:videoFiles.Count -eq 0) { return }; $btnStart.IsEnabled=$false; $btnBrowse.IsEnabled=$false; $btnStop.Visibility="Visible"; $btnStop.IsEnabled=$true; $global:stopRequested=$false; $selEnc=$comboEncoder.SelectedItem.Tag; $global:logEnabled=$chkLog.IsChecked
     $workDir=Join-Path $txtPath.Text "__Video-Optimizer__"; if ($chkCacheResume.IsChecked -or $chkLog.IsChecked) { if (-not (Test-Path $workDir)) { $hd=New-Item -ItemType Directory -Path $workDir -Force; $hd.Attributes="Directory","Hidden" } }
     $cacheFile=Join-Path $workDir "Cache.json"; $global:logFilePath=Join-Path $workDir "Log.txt"
-    $cache=@{}; if ($chkCacheResume.IsChecked -and (Test-Path $cacheFile)) { try { $json=Get-Content $cacheFile -Raw | ConvertFrom-Json; foreach($e in $json){ if($e.Path){ if ($null -ne $e.SettingsKey -and $null -eq $e.Runs) { $runData = @{}; foreach ($fld in @('Status', 'Reason', 'LastTried')) { if ($null -ne $e.$fld) { $runData[$fld] = $e.$fld; $e.PSObject.Properties.Remove($fld) } }; $e | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{($e.SettingsKey)=$runData}; $e.PSObject.Properties.Remove('SettingsKey') }; if ($null -eq $e.Runs) { $e | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{} }; $cache[$e.Path.ToLowerInvariant()]=$e } } } catch {} }
+    $cache=@{}; if ($chkCacheResume.IsChecked -and (Test-Path $cacheFile)) { try { $json=Get-Content $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json; foreach($e in $json){ if($e.Path){ if ($null -ne $e.SettingsKey -and $null -eq $e.Runs) { $runData = @{}; foreach ($fld in @('Status', 'Reason', 'LastTried')) { if ($null -ne $e.$fld) { $runData[$fld] = $e.$fld; $e.PSObject.Properties.Remove($fld) } }; $e | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{($e.SettingsKey)=$runData}; $e.PSObject.Properties.Remove('SettingsKey') }; if ($null -eq $e.Runs) { $e | Add-Member -MemberType NoteProperty -Name "Runs" -Value @{} }; $cache[$e.Path.ToLowerInvariant()]=$e } } } catch {} }
     
     $vmafSamples = switch($comboSamples.SelectedIndex){0{1};2{5};default{3}}
     $vmafDur = switch($comboProbeDur.SelectedIndex){0{3};2{10};default{5}}
@@ -705,7 +705,7 @@ $btnStart.Add_Click({
                                              $probeCache.MaxVmafCq = $cqVal
                                          }
                                          try {
-                                             $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile
+                                             $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile -Encoding UTF8
                                          } catch {}
                                      }
                                      return $avg
@@ -903,7 +903,7 @@ $btnStart.Add_Click({
                                             $probeCache.MaxVmafCq = $bestCQ
                                             $probeCache.MaxAchievableVmaf = $bestScore
                                             try {
-                                                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile
+                                                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile -Encoding UTF8
                                             } catch {}
                                         }
                                     }
@@ -1198,7 +1198,7 @@ $btnStart.Add_Click({
                 if ($runData.Keys.Count -gt 0) {
                     $config.Cache[$key].Runs[$config.SettingsKey] = $runData
                 }
-                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile 
+                $config.Cache.Values | ConvertTo-Json -Depth 4 | Set-Content $config.CacheFile -Encoding UTF8
             }            
             if ($clipPath -and (Test-Path $clipPath)) {
                 try { Remove-Item $clipPath -Force } catch {}

@@ -164,7 +164,7 @@ function Save-Config {
 function Load-Config {
     if (Test-Path $configFile) {
         try {
-            $config = Get-Content -Raw -LiteralPath $configFile | ConvertFrom-Json
+            $config = Get-Content -Raw -LiteralPath $configFile -Encoding UTF8 | ConvertFrom-Json
             if ($config.TargetFolder -and (Test-Path $config.TargetFolder)) { $global:targetFolder = $config.TargetFolder }
             if ($null -ne $config.Recursive) { $global:recursive = [bool]$config.Recursive }
             if ($null -ne $config.VmafEnabled) { $global:vmafEnabled = [bool]$config.VmafEnabled }
@@ -1356,7 +1356,7 @@ $currentSettingsKey = Get-OptimizationSettingsKey -VideoCodec $videoCodec -Mode 
 $unoptimizableCache = @{}
 if (Test-Path -LiteralPath $cacheFile) {
     try {
-        $cachedItems = @(Get-Content -LiteralPath $cacheFile -Raw | ConvertFrom-Json)
+        $cachedItems = @(Get-Content -LiteralPath $cacheFile -Raw -Encoding UTF8 | ConvertFrom-Json)
         foreach ($item in $cachedItems) {
             if ($item.Path) {
                 if ($null -ne $item.SettingsKey -and $null -eq $item.Runs) {
@@ -1740,7 +1740,7 @@ if ($totalFiles -eq 0) {
                         } elseif ($isProRes) {
                             if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
-                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial-aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)
                         if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
                         $ffArgs += @($trialOut)
@@ -1779,7 +1779,7 @@ if ($totalFiles -eq 0) {
                                 } elseif ($isProRes) {
                                     if ($alphaFmt) { $ffArgsFull += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                                 }
-                                if ($videoCodec -match "nvenc") { $ffArgsFull += @("-spatial_aq","1","-aq-strength","8") }
+                                if ($videoCodec -match "nvenc") { $ffArgsFull += @("-spatial-aq","1","-aq-strength","8") }
                                 $ffArgsFull += @("-c:a", $targetAudioCodec)
                                 if ($targetAudioBitrate) { $ffArgsFull += @("-b:a", $targetAudioBitrate) }
                                 $ffArgsFull += @($tempOutput)
@@ -1825,7 +1825,7 @@ if ($totalFiles -eq 0) {
                         } elseif ($isProRes) {
                             if ($alphaFmt) { $ffArgs += @("-profile:v", "4444", "-pix_fmt", $alphaFmt) }
                         }
-                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial_aq","1","-aq-strength","8") }
+                        if ($videoCodec -match "nvenc") { $ffArgs += @("-spatial-aq","1","-aq-strength","8") }
                         $ffArgs += @("-c:a", $targetAudioCodec)
                         if ($targetAudioBitrate) { $ffArgs += @("-b:a", $targetAudioBitrate) }
                         $ffArgs += @($tempOutput)

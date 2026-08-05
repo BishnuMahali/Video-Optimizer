@@ -332,8 +332,8 @@ class VideoOptimizerEngine:
                         probe_cache['MaxAchievableVmaf'] = avg
                         probe_cache['MaxVmafCq'] = cq_val
                     try:
-                        with open(config['CacheFile'], 'w') as f:
-                            json.dump(list(config['Cache'].values()), f, indent=4)
+                        with open(config['CacheFile'], 'w', encoding='utf-8') as f:
+                            json.dump(list(config['Cache'].values()), f, indent=4, ensure_ascii=False)
                     except:
                         pass
                 return avg
@@ -501,8 +501,8 @@ class VideoOptimizerEngine:
                 probe_cache['MaxVmafCq'] = best_cq
                 probe_cache['MaxAchievableVmaf'] = best_score
                 try:
-                    with open(config['CacheFile'], 'w') as f:
-                        json.dump(list(config['Cache'].values()), f, indent=4)
+                    with open(config['CacheFile'], 'w', encoding='utf-8') as f:
+                        json.dump(list(config['Cache'].values()), f, indent=4, ensure_ascii=False)
                 except:
                     pass
 
@@ -989,8 +989,8 @@ class VideoOptimizerEngine:
             config['Cache'][key] = cache_entry
             
             try:
-                with open(config['CacheFile'], 'w') as f:
-                    json.dump(list(config['Cache'].values()), f, indent=4)
+                with open(config['CacheFile'], 'w', encoding='utf-8') as f:
+                    json.dump(list(config['Cache'].values()), f, indent=4, ensure_ascii=False)
             except:
                 pass
 
@@ -1027,7 +1027,7 @@ class VideoOptimizerEngine:
         
         # NVENC Visual Tuning
         if 'nvenc' in target_codec:
-            ff_args += ['-spatial_aq', '1', '-aq-strength', '8']
+            ff_args += ['-spatial-aq', '1', '-aq-strength', '8']
         
         # Alpha Channel Preservation
         if target_codec == 'prores_ks' and config.get('AlphaPreserved'):
@@ -1616,7 +1616,7 @@ class VideoOptimizerGUI(ctk.CTk):
     def load_config(self):
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     
                 # Apply config to UI
@@ -1745,8 +1745,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'EfficientCodecs': self.engine.efficient_codecs
             }
             
-            with open(self.config_file, 'w') as f:
-                json.dump(config, f, indent=4)
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
         except Exception as e:
             self.add_log(f"[FAIL] Failed to save config: {e}")
 
@@ -1917,7 +1917,7 @@ class VideoOptimizerGUI(ctk.CTk):
         # Load Cache
         if config['ResumeEnabled'] and os.path.exists(config['CacheFile']):
             try:
-                with open(config['CacheFile'], 'r') as f:
+                with open(config['CacheFile'], 'r', encoding='utf-8') as f:
                     content = f.read().strip()
                     if content:
                         cache_list = json.loads(content)

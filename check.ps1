@@ -1,1 +1,0 @@
-$text = Get-Content "Video-Optimizer-GUI.ps1" -Raw; $count = 0; $line = 1; for($i=0; $i -lt $text.Length; $i++){ if($text[$i] -eq "{") { $count++ } elseif($text[$i] -eq "}") { $count-- } if($text[$i] -eq "`n") { $line++ } if ($count -lt 0) { Write-Host "Negative at line $line"; break } }; Write-Host "Final count: $count"
