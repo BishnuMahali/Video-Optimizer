@@ -54,7 +54,7 @@ This release implements an advanced **Multi-Run History Architecture** to the ca
 ### ⚙️ Best-in-Class Hardware & Codec Engine:
 - **Full Hardware Accel Detection:** Auto-detects NVIDIA NVENC, AMD AMF, and Intel QSV capabilities via a real-world, 1-frame dummy encode pass.
 - **GPU-Accelerated Pipeline:** Injects `-hwaccel` flags to ensure hardware-driven decoding AND encoding for maximum throughput.
-- **NVIDIA Visual Tuning:** Automatically injects `-spatial_aq 1 -aq-strength 8` for superior visual fidelity on NVENC hardware.
+- **NVIDIA Visual Tuning:** Automatically injects `-spatial-aq 1 -aq-strength 8` for superior visual fidelity on NVENC hardware.
 - **Intelligent Audio Compatibility:** Analyzes audio streams and automatically transcodes to high-quality AAC only if the original audio is incompatible with the target container.
 
 ---

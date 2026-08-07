@@ -641,6 +641,13 @@ class VideoOptimizerEngine:
         
         container = config.get('Container', '.mp4')
         if container == 'Original': container = file_path.suffix
+        
+        # Codec-Container Compatibility Guard
+        legacy_containers = ['.avi', '.wmv', '.flv', '.vob', '.ts']
+        hevc_av1_codecs = ['hevc_nvenc', 'hevc_amf', 'hevc_qsv', 'libx265', 'av1_nvenc', 'av1_amf', 'av1_qsv', 'libsvtav1']
+        if container.lower() in legacy_containers and target_codec in hevc_av1_codecs:
+            self.log(f"[WARN] {container} container is incompatible with {target_codec}. Auto-switching to .mkv.")
+            container = '.mkv'
             
         temp_dir_opt = config.get('TempDir')
         if temp_dir_opt:

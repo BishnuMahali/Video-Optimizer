@@ -1503,6 +1503,15 @@ if ($totalFiles -eq 0) {
             # --- Finalize Paths ---
             $uid = [guid]::NewGuid().ToString().Substring(0, 8)
             $finalExt = if ($container -eq "Original") { $file.Extension } else { ".$($container.ToLower())" }
+
+            # Codec-Container Compatibility Guard
+            $legacyContainers = @(".avi", ".wmv", ".flv", ".vob", ".ts")
+            $hevcAv1Codecs = @("hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265", "av1_nvenc", "av1_amf", "av1_qsv", "libsvtav1")
+            if ($legacyContainers -contains $finalExt.ToLower() -and $hevcAv1Codecs -contains $videoCodec) {
+                Write-Host "  $($S.Bullet) $finalExt container incompatible with $videoCodec. Auto-switching to .mkv." -ForegroundColor Yellow
+                $finalExt = ".mkv"
+            }
+
             $tempOutput = Join-Path $global:tempDir ($name + "_TEMP_${uid}" + $finalExt)
             
             if ($onSuccessAction -eq "Replace Original") {
