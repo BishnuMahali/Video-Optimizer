@@ -426,7 +426,7 @@ $btnStart.Add_Click({
             }
 
             # Codec-Container Compatibility Guard
-            $legacyContainers = @(".avi", ".wmv", ".flv", ".vob", ".ts")
+            $legacyContainers = @(".avi", ".wmv", ".flv", ".vob", ".ts", ".mpg", ".mpeg", ".m2ts", ".mts")
             $hevcAv1Codecs = @("hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265", "av1_nvenc", "av1_amf", "av1_qsv", "libsvtav1")
             if ($legacyContainers -contains $ext.ToLower() -and $hevcAv1Codecs -contains $config.Encoder) {
                 Write-Output @{ Type="Log"; Msg="[WARN] $ext container is incompatible with $($config.Encoder). Auto-switching to .mkv." }
