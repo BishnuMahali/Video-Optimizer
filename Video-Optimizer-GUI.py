@@ -1259,7 +1259,7 @@ class VideoOptimizerGUI(ctk.CTk):
 
         self.combo_fallback = ctk.CTkComboBox(self.sidebar, values=["MP4 + AAC", "MKV + Original Audio", "MKV + AAC"], state="readonly")
         self.combo_fallback.set("MP4 + AAC")
-        self.combo_fallback.pack(fill="x", padx=20, pady=(0, 5))
+        self.combo_fallback.pack(fill="x", padx=20, pady=5)
 
         # Alpha Handling Combobox
         self.alpha_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
