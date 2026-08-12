@@ -642,12 +642,23 @@ class VideoOptimizerEngine:
         container = config.get('Container', '.mp4')
         if container == 'Original': container = file_path.suffix
         
-        # Codec-Container Compatibility Guard
+        # Codec-Container Compatibility Guard (Smart Fallback)
         legacy_containers = ['.avi', '.wmv', '.flv', '.vob', '.ts', '.mpg', '.mpeg', '.m2ts', '.mts']
         hevc_av1_codecs = ['hevc_nvenc', 'hevc_amf', 'hevc_qsv', 'libx265', 'av1_nvenc', 'av1_amf', 'av1_qsv', 'libsvtav1']
         if container.lower() in legacy_containers and target_codec in hevc_av1_codecs:
-            self.log(f"[WARN] {container} container is incompatible with {target_codec}. Auto-switching to .mkv.")
-            container = '.mkv'
+            fallback_enabled = config.get('FallbackEnabled', True)
+            if fallback_enabled:
+                fallback_pref = config.get('FallbackPreference', 'MP4 + AAC')
+                self.log(f"[FALLBACK] {container} incompatible with {target_codec}. Applying: {fallback_pref}")
+                if 'MP4' in fallback_pref:
+                    container = '.mp4'
+                else:
+                    container = '.mkv'
+                if 'AAC' in fallback_pref:
+                    config['_force_aac'] = True
+            else:
+                self.log(f"[SKIP] {container} incompatible with {target_codec}. Fallback disabled, skipping file.")
+                return {'Success': False, 'Msg': 'Skipped (Incompatible)', 'FinalVmaf': '---'}
             
         temp_dir_opt = config.get('TempDir')
         if temp_dir_opt:
@@ -675,15 +686,19 @@ class VideoOptimizerEngine:
         target_audio_args = []
 
         if target_audio_opt == 'copy':
-            incompatible = False
-            if container == '.mp4' and not any(a in source_audio for a in ['aac', 'mp3', 'opus', 'ac3', 'eac3', 'mp2', 'mp1']): incompatible = True
-            elif container == '.mov' and not any(a in source_audio for a in ['aac', 'mp3', 'ac3', 'eac3', 'alac', 'pcm']): incompatible = True
-            
-            if incompatible:
-                self.log(f"[WARN] Audio ({source_audio}) incompatible with {container}. Encoding to AAC.")
+            if config.get('_force_aac'):
+                self.log(f"[FALLBACK] Encoding audio to AAC as part of container fallback.")
                 target_audio_args = ['-c:a', 'aac', '-b:a', '128k']
             else:
-                target_audio_args = ['-c:a', 'copy']
+                incompatible = False
+                if container == '.mp4' and not any(a in source_audio for a in ['aac', 'mp3', 'opus', 'ac3', 'eac3', 'mp2', 'mp1']): incompatible = True
+                elif container == '.mov' and not any(a in source_audio for a in ['aac', 'mp3', 'ac3', 'eac3', 'alac', 'pcm']): incompatible = True
+                
+                if incompatible:
+                    self.log(f"[WARN] Audio ({source_audio}) incompatible with {container}. Encoding to AAC.")
+                    target_audio_args = ['-c:a', 'aac', '-b:a', '128k']
+                else:
+                    target_audio_args = ['-c:a', 'copy']
         else:
             parts = target_audio_opt.split(' ')
             target_audio_args = ['-c:a', parts[0], '-b:a', parts[1]]
@@ -1238,6 +1253,14 @@ class VideoOptimizerGUI(ctk.CTk):
         self.chk_skip_efficient.pack(padx=20, pady=5, anchor="w")
         self.chk_skip_efficient.select()
 
+        self.chk_fallback = ctk.CTkCheckBox(self.sidebar, text="Smart Container Fallback", command=self.on_fallback_toggle)
+        self.chk_fallback.pack(padx=20, pady=5, anchor="w")
+        self.chk_fallback.select()
+
+        self.combo_fallback = ctk.CTkComboBox(self.sidebar, values=["MP4 + AAC", "MKV + Original Audio", "MKV + AAC"])
+        self.combo_fallback.set("MP4 + AAC")
+        self.combo_fallback.pack(fill="x", padx=40, pady=(0, 5))
+
         # Alpha Handling Combobox
         self.alpha_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         self.alpha_frame.pack(fill="x", padx=20, pady=(5, 10))
@@ -1683,6 +1706,11 @@ class VideoOptimizerGUI(ctk.CTk):
                 if 'SkipEfficient' in config:
                     if config['SkipEfficient']: self.chk_skip_efficient.select()
                     else: self.chk_skip_efficient.deselect()
+                if 'FallbackEnabled' in config:
+                    if config['FallbackEnabled']: self.chk_fallback.select()
+                    else: self.chk_fallback.deselect()
+                    self.on_fallback_toggle()
+                if 'FallbackPreference' in config: self.combo_fallback.set(config['FallbackPreference'])
                 if 'AlphaHandling' in config:
                     self.combo_alpha.set(config['AlphaHandling'])
                 # Backwards compatibility
@@ -1740,6 +1768,8 @@ class VideoOptimizerGUI(ctk.CTk):
                 'Preset': self.combo_preset.get(),
                 'Audio': self.combo_audio.get(),
                 'SkipEfficient': bool(self.chk_skip_efficient.get()),
+                'FallbackEnabled': bool(self.chk_fallback.get()),
+                'FallbackPreference': self.combo_fallback.get(),
                 'AlphaHandling': self.combo_alpha.get(),
                 'OnSuccess': self.combo_on_success.get(),
                 'OnFail': self.combo_on_fail.get(),
@@ -1791,6 +1821,10 @@ class VideoOptimizerGUI(ctk.CTk):
         self.on_encoder_change(default_enc)
         
         self.add_log(f"[SUCCESS] FFmpeg Engine Initialized & Ready. ({supported_count} HW Encoders Detected)")
+
+    def on_fallback_toggle(self):
+        state = "normal" if self.chk_fallback.get() else "disabled"
+        self.combo_fallback.configure(state=state)
 
     def on_encoder_change(self, choice):
         # Update presets based on choice
@@ -1907,6 +1941,8 @@ class VideoOptimizerGUI(ctk.CTk):
             "Container": container,
             "Audio": audio,
             "SkipEfficient": bool(self.chk_skip_efficient.get()),
+            "FallbackEnabled": bool(self.chk_fallback.get()),
+            "FallbackPreference": self.combo_fallback.get(),
             "AlphaHandling": self.combo_alpha.get(),
             "OnSuccess": self.combo_on_success.get(),
             "OnFail": self.combo_on_fail.get(),

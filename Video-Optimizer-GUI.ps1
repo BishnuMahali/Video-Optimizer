@@ -80,7 +80,7 @@ $xaml_str = @"
         
         <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="450"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,20,0"><StackPanel>
-                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkQuickTest" Content="Quick Test Mode" IsChecked="True"/><TextBlock Text="Duration:" Margin="20,0,5,0" VerticalAlignment="Center" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblQuickTestVal" Text="25s" VerticalAlignment="Center" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel><Slider x:Name="sliderQuickTest" Minimum="5" Maximum="60" Value="25" SmallChange="1" LargeChange="5" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,0"/><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel><StackPanel Margin="0,10,0,0"><TextBlock Text="Transparent Video Handling:" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboAlpha"><ComboBoxItem Content="Preserve (VP9 / .webm)" IsSelected="True"/><ComboBoxItem Content="Preserve (ProRes / .mov)"/><ComboBoxItem Content="Skip Transparent Files"/><ComboBoxItem Content="Flatten (Ignore Alpha)"/></ComboBox></StackPanel></StackPanel></Border>
+                <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="1. SOURCE &amp; ENGINE" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><Grid Margin="0,0,0,15"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBox x:Name="txtPath" IsReadOnly="True"/><Button x:Name="btnBrowse" Grid.Column="1" Content="Browse" Width="70" Margin="8,0,0,0" Style="{StaticResource SecondaryButtonStyle}"/></Grid><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Encoder" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboEncoder"/></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Container" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboContainer"><ComboBoxItem Content="MP4" IsSelected="True"/><ComboBoxItem Content="MKV"/><ComboBoxItem Content="MOV"/><ComboBoxItem Content="Original"/></ComboBox></StackPanel></Grid><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkQuickTest" Content="Quick Test Mode" IsChecked="True"/><TextBlock Text="Duration:" Margin="20,0,5,0" VerticalAlignment="Center" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblQuickTestVal" Text="25s" VerticalAlignment="Center" FontWeight="Bold" Foreground="$($Theme.Accent)"/></StackPanel><Slider x:Name="sliderQuickTest" Minimum="5" Maximum="60" Value="25" SmallChange="1" LargeChange="5" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,0"/><StackPanel Orientation="Horizontal" Margin="0,15,0,0"><CheckBox x:Name="chkRecursive" Content="Recursive Scan" IsChecked="True"/><CheckBox x:Name="chkVmaf" Content="Enable Advanced VMAF" Margin="20,0,0,0" IsChecked="True" Foreground="$($Theme.Accent)" FontWeight="Bold"/></StackPanel><CheckBox x:Name="chkFallback" Content="Smart Container Fallback" IsChecked="True" Margin="0,5,0,0"/><ComboBox x:Name="comboFallback" Margin="20,5,0,5" Height="30"><ComboBoxItem Content="MP4 + AAC" IsSelected="True"/><ComboBoxItem Content="MKV + Original Audio"/><ComboBoxItem Content="MKV + AAC"/></ComboBox><StackPanel Margin="0,10,0,0"><TextBlock Text="Transparent Video Handling:" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboAlpha"><ComboBoxItem Content="Preserve (VP9 / .webm)" IsSelected="True"/><ComboBoxItem Content="Preserve (ProRes / .mov)"/><ComboBoxItem Content="Skip Transparent Files"/><ComboBoxItem Content="Flatten (Ignore Alpha)"/></ComboBox></StackPanel></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardVmaf"><StackPanel><TextBlock Text="2. ADVANCED VMAF TUNING" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><StackPanel Margin="0,0,0,10"><CheckBox x:Name="chkVmafFallback" Content="Encode with Max VMAF as Fallback" IsChecked="True" Margin="0,0,0,6"/><CheckBox x:Name="chkVmafLadder" Content="Enable Stepping Target" IsChecked="False"/></StackPanel><StackPanel x:Name="panelVmafTarget"><Grid Margin="0,0,0,5"><TextBlock Text="Target Quality (VMAF)" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafTarget" Text="93" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmaf" Minimum="70" Maximum="100" Value="93" Margin="0,0,0,15"/></StackPanel><StackPanel x:Name="panelVmafLadder" Visibility="Collapsed" Margin="0,0,0,15"><TextBlock Text="VMAF Target Ladder (Space/Comma Separated)" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><TextBox x:Name="txtVmafLadder" Text="93" Height="30" Margin="0,0,0,5"/></StackPanel><StackPanel Margin="0,0,0,15"><Grid Margin="0,0,0,5"><TextBlock Text="Minimum VMAF Ceiling" FontSize="10" Foreground="$($Theme.TextSub)"/><TextBlock x:Name="lblVmafCeiling" Text="85" HorizontalAlignment="Right" FontWeight="Bold" Foreground="$($Theme.Accent)"/></Grid><Slider x:Name="sliderVmafCeiling" Minimum="0" Maximum="100" Value="85"/></StackPanel><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Grid.Column="0" Margin="0,0,5,0"><TextBlock Text="Samples" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboSamples"><ComboBoxItem Content="1 Sample"/><ComboBoxItem Content="3 Samples (Balanced)" IsSelected="True"/><ComboBoxItem Content="5 Samples"/></ComboBox></StackPanel><StackPanel Grid.Column="1" Margin="5,0,0,0"><TextBlock Text="Probe Duration" FontSize="10" Foreground="$($Theme.TextSub)" Margin="0,0,0,4"/><ComboBox x:Name="comboProbeDur"><ComboBoxItem Content="3 Seconds"/><ComboBoxItem Content="5 Seconds" IsSelected="True"/><ComboBoxItem Content="10 Seconds"/></ComboBox></StackPanel></Grid></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}" x:Name="cardManual" Visibility="Collapsed"><StackPanel><TextBlock Text="2. MANUAL QUALITY LADDER" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><TextBox x:Name="txtQualityLadder" Text="23,26,29" Height="30"/><TextBlock Text="Speed Preset" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,15,0,8"/><ComboBox x:Name="comboPreset"/></StackPanel></Border>
                 <Border Style="{StaticResource CardStyle}"><StackPanel><TextBlock Text="3. AUDIO &amp; POST-PROCESS" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboAudio" Margin="0,0,0,15"><ComboBoxItem Content="Copy (Original)" IsSelected="True"/><ComboBoxItem Content="AAC (128k)"/><ComboBoxItem Content="AAC (192k)"/></ComboBox><TextBlock Text="On Failure" FontWeight="Bold" Foreground="$($Theme.TextSub)" Margin="0,0,0,8"/><ComboBox x:Name="comboOnFail"><ComboBoxItem Content="Move to 'Unoptimizable'" IsSelected="True"/><ComboBoxItem Content="Delete File"/><ComboBoxItem Content="Ignore (Keep Original)"/></ComboBox></StackPanel></Border>
@@ -115,6 +115,7 @@ $txtPath=$window.FindName("txtPath"); $btnBrowse=$window.FindName("btnBrowse"); 
 $chkVmafFallback=$window.FindName("chkVmafFallback"); $chkVmafLadder=$window.FindName("chkVmafLadder"); $panelVmafTarget=$window.FindName("panelVmafTarget"); $panelVmafLadder=$window.FindName("panelVmafLadder"); $txtVmafLadder=$window.FindName("txtVmafLadder"); $sliderVmafCeiling=$window.FindName("sliderVmafCeiling"); $lblVmafCeiling=$window.FindName("lblVmafCeiling")
 $chkQuickTest=$window.FindName("chkQuickTest"); $sliderQuickTest=$window.FindName("sliderQuickTest"); $lblQuickTestVal=$window.FindName("lblQuickTestVal")
 $comboAlpha=$window.FindName("comboAlpha")
+$chkFallback=$window.FindName("chkFallback"); $comboFallback=$window.FindName("comboFallback")
 
 $global:logEnabled=$false; $global:logFilePath=""; $global:videoFiles=@(); $global:stopRequested=$false; $global:StopSignal = New-Object 'bool[]' 1; $global:StopSignal[0] = $false
 $knownVideoExtensions = @('.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.ts', '.vob', '.m2ts', '.mpeg', '.mpg')
@@ -277,6 +278,8 @@ $btnStart.Add_Click({
         QuickTestEnabled=[bool]$chkQuickTest.IsChecked
         QuickTestDuration=[int]$sliderQuickTest.Value
         TempDir=$tempDir
+        FallbackEnabled=[bool]$chkFallback.IsChecked
+        FallbackPreference=switch($comboFallback.SelectedIndex){1{"MKV + Original Audio"};2{"MKV + AAC"};default{"MP4 + AAC"}}
         AlphaHandling=$comboAlpha.Text
     }
     $global:processedCount=0; $global:totalSavedBytes=0; $global:totalOriginalBytes=0
@@ -425,12 +428,20 @@ $btnStart.Add_Click({
                 }
             }
 
-            # Codec-Container Compatibility Guard
+            # Codec-Container Compatibility Guard (Smart Fallback)
             $legacyContainers = @(".avi", ".wmv", ".flv", ".vob", ".ts", ".mpg", ".mpeg", ".m2ts", ".mts")
             $hevcAv1Codecs = @("hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265", "av1_nvenc", "av1_amf", "av1_qsv", "libsvtav1")
+            $forceAac = $false
             if ($legacyContainers -contains $ext.ToLower() -and $hevcAv1Codecs -contains $config.Encoder) {
-                Write-Output @{ Type="Log"; Msg="[WARN] $ext container is incompatible with $($config.Encoder). Auto-switching to .mkv." }
-                $ext = ".mkv"
+                if ($config.FallbackEnabled) {
+                    $fbPref = $config.FallbackPreference
+                    Write-Output @{ Type="Log"; Msg="[FALLBACK] $ext incompatible with $($config.Encoder). Applying: $fbPref" }
+                    if ($fbPref -match "MP4") { $ext = ".mp4" } else { $ext = ".mkv" }
+                    if ($fbPref -match "AAC") { $forceAac = $true }
+                } else {
+                    Write-Output @{ Type="Log"; Msg="[SKIP] $ext incompatible with $($config.Encoder). Fallback disabled." }
+                    Write-Output @{ Index=$idx; Success=$false; Msg="Skipped (Incompatible)"; Vmaf="---"; Total=$files.Count; File=$f.Name; Type="Result" }; continue
+                }
             }
 
             $isVpx = ($config.Encoder -match "libvpx")
@@ -494,15 +505,20 @@ $btnStart.Add_Click({
                 $source_audio = (& ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "$($f.FullName)" 2>$null | Out-String).Trim().ToLower()
                 $target_audio_args = @()
                 if ($config.Audio -eq "copy") {
-                    $incompatible = $false
-                    if ($config.Container -eq ".mp4" -and -not ($source_audio -match "aac|mp3|opus|ac3|eac3|mp2|mp1")) { $incompatible = $true }
-                    elseif ($config.Container -eq ".mov" -and -not ($source_audio -match "aac|mp3|ac3|eac3|alac|pcm")) { $incompatible = $true }
-                    
-                    if ($incompatible) {
-                        Write-Output @{ Type="Log"; Msg="[WARN] Audio ($source_audio) incompatible with $($config.Container). Encoding to AAC." }
+                    if ($forceAac) {
+                        Write-Output @{ Type="Log"; Msg="[FALLBACK] Encoding audio to AAC as part of container fallback." }
                         $target_audio_args = @("-c:a", "aac", "-b:a", "128k")
                     } else {
-                        $target_audio_args = @("-c:a", "copy")
+                        $incompatible = $false
+                        if ($config.Container -eq ".mp4" -and -not ($source_audio -match "aac|mp3|opus|ac3|eac3|mp2|mp1")) { $incompatible = $true }
+                        elseif ($config.Container -eq ".mov" -and -not ($source_audio -match "aac|mp3|ac3|eac3|alac|pcm")) { $incompatible = $true }
+                        
+                        if ($incompatible) {
+                            Write-Output @{ Type="Log"; Msg="[WARN] Audio ($source_audio) incompatible with $($config.Container). Encoding to AAC." }
+                            $target_audio_args = @("-c:a", "aac", "-b:a", "128k")
+                        } else {
+                            $target_audio_args = @("-c:a", "copy")
+                        }
                     }
                 } else {
                     $parts = $config.Audio.Split(" ")

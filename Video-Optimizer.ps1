@@ -80,6 +80,9 @@ $global:preset = if ($global:defaultEnc.Codec -match "nvenc") { "p5" } elseif ($
 
 $global:audioAction = "Copy"
 $global:container = "MP4"
+$global:fallbackEnabled = $true
+$global:fallbackPreference = "MP4 + AAC"
+$global:fallbackOptions = @("MP4 + AAC", "MKV + Original Audio", "MKV + AAC")
 
 # Success file handling
 $global:onSuccessOptions = @("Replace Original", "Keep Original (Add _opt)")
@@ -150,6 +153,8 @@ function Save-Config {
         KnownIgnoredExtensions = $global:knownIgnoredExtensions
         EfficientCodecs   = $global:efficientCodecs
         EnableCache       = $global:enableCache
+        FallbackEnabled   = $global:fallbackEnabled
+        FallbackPreference = $global:fallbackPreference
         AlphaHandling     = $global:alphaHandling
         QuickTestEnabled   = $global:quickTestEnabled
         QuickTestDuration  = $global:quickTestDuration
@@ -184,6 +189,8 @@ function Load-Config {
             if ($config.UnoptCustomFolder) { $global:unoptCustomFolder = $config.UnoptCustomFolder }
             if ($null -ne $config.SkipEfficient) { $global:skipEfficient = [bool]$config.SkipEfficient }
             if ($null -ne $config.EnableCache) { $global:enableCache = [bool]$config.EnableCache }
+            if ($null -ne $config.FallbackEnabled) { $global:fallbackEnabled = [bool]$config.FallbackEnabled }
+            if ($config.FallbackPreference) { $global:fallbackPreference = $config.FallbackPreference }
             if ($null -ne $config.AlphaHandling) { 
                 $global:alphaHandling = $config.AlphaHandling 
                 $idx = [array]::IndexOf($global:alphaHandlingOptions, $global:alphaHandling)
@@ -915,6 +922,8 @@ while ($runningMenu) {
     elseif ($global:currentSubMenu -eq "EncoderQuality") {
         $items += @{ Label = "Encoder"; Value = "$($activeEnc.Name) ($($activeEnc.Codec))"; Hint = "Video encoder backend to use." }
         $items += @{ Label = "Container"; Value = $container; Hint = "Output container format." }
+        $fbDisplay = if ($fallbackEnabled) { $global:fallbackPreference } else { "Disabled" }
+        $items += @{ Label = "Smart Fallback"; Value = $fbDisplay; Hint = "Auto-fix incompatible codec/container combos." }
         
         $vmafDisplay = if ($vmafEnabled) { "Enabled" } else { "Disabled" }
         $vmafHint = if (-not $hasVmaf) { "Requires ffmpeg with libvmaf support!" } else { "Finds perfect quality for each file." }
@@ -1072,6 +1081,13 @@ while ($runningMenu) {
                     $idx = ($idx - 1 + $global:containerOptions.Count) % $global:containerOptions.Count
                     $global:container = $global:containerOptions[$idx]
                 }
+                "Smart Fallback" {
+                    if ($global:fallbackEnabled) {
+                        $idx = [array]::IndexOf($global:fallbackOptions, $global:fallbackPreference)
+                        $idx = if ($idx -le 0) { $global:fallbackOptions.Count - 1 } else { $idx - 1 }
+                        $global:fallbackPreference = $global:fallbackOptions[$idx]
+                    } else { $global:fallbackEnabled = $true }
+                }
                 "Success Action" {
                     $idx = [array]::IndexOf($global:onSuccessOptions, $global:onSuccessAction)
                     $idx = ($idx - 1 + $global:onSuccessOptions.Count) % $global:onSuccessOptions.Count
@@ -1166,6 +1182,13 @@ while ($runningMenu) {
                     $idx = ($idx + 1) % $global:containerOptions.Count
                     $global:container = $global:containerOptions[$idx]
                 }
+                "Smart Fallback" {
+                    if ($global:fallbackEnabled) {
+                        $idx = [array]::IndexOf($global:fallbackOptions, $global:fallbackPreference)
+                        $idx = if ($idx -ge ($global:fallbackOptions.Count - 1)) { 0 } else { $idx + 1 }
+                        $global:fallbackPreference = $global:fallbackOptions[$idx]
+                    } else { $global:fallbackEnabled = $true }
+                }
                 "Success Action" {
                     $idx = [array]::IndexOf($global:onSuccessOptions, $global:onSuccessAction)
                     $idx = ($idx + 1) % $global:onSuccessOptions.Count
@@ -1254,6 +1277,7 @@ while ($runningMenu) {
                             }
                             else { Write-Host "Invalid input!" -ForegroundColor Red; Start-Sleep -Seconds 1 }
                         }
+                        "Smart Fallback" { $global:fallbackEnabled = -not $global:fallbackEnabled }
                         "Encode with Max VMAF as Fallback" { $global:vmafFallback = -not $global:vmafFallback }
                         "Min Ceiling" {
                             Write-Host "`n"
@@ -1504,12 +1528,22 @@ if ($totalFiles -eq 0) {
             $uid = [guid]::NewGuid().ToString().Substring(0, 8)
             $finalExt = if ($container -eq "Original") { $file.Extension } else { ".$($container.ToLower())" }
 
-            # Codec-Container Compatibility Guard
+            # Codec-Container Compatibility Guard (Smart Fallback)
             $legacyContainers = @(".avi", ".wmv", ".flv", ".vob", ".ts", ".mpg", ".mpeg", ".m2ts", ".mts")
             $hevcAv1Codecs = @("hevc_nvenc", "hevc_amf", "hevc_qsv", "libx265", "av1_nvenc", "av1_amf", "av1_qsv", "libsvtav1")
+            $forceAac = $false
             if ($legacyContainers -contains $finalExt.ToLower() -and $hevcAv1Codecs -contains $videoCodec) {
-                Write-Host "  $($S.Bullet) $finalExt container incompatible with $videoCodec. Auto-switching to .mkv." -ForegroundColor Yellow
-                $finalExt = ".mkv"
+                if ($global:fallbackEnabled) {
+                    $fbPref = $global:fallbackPreference
+                    Write-Host "  $($S.Bullet) [FALLBACK] $finalExt incompatible with $videoCodec. Applying: $fbPref" -ForegroundColor Yellow
+                    if ($fbPref -match "MP4") { $finalExt = ".mp4" } else { $finalExt = ".mkv" }
+                    if ($fbPref -match "AAC") { $forceAac = $true }
+                } else {
+                    Write-Host "  $($S.Bullet) [SKIP] $finalExt incompatible with $videoCodec. Fallback disabled." -ForegroundColor Yellow
+                    Add-Content -Path $logFile -Value "[SKIPPED] $($file.Name) (Container incompatible, fallback disabled)"
+                    $skippedCount++
+                    continue
+                }
             }
 
             $tempOutput = Join-Path $global:tempDir ($name + "_TEMP_${uid}" + $finalExt)
@@ -1529,10 +1563,15 @@ if ($totalFiles -eq 0) {
             elseif ($audioAction -match "AC3") { $targetAudioCodec = "ac3"; $targetAudioBitrate = ($audioAction -replace '[^\d]', '') + "k" }
 
             if ($targetAudioCodec -eq "copy") {
-                $incompatible = $false
-                if ($finalExt -eq ".mp4" -and $aCodec -notmatch "aac|mp3|opus|ac3|eac3|mp2|mp1") { $incompatible = $true }
-                elseif ($finalExt -eq ".mov" -and $aCodec -notmatch "aac|mp3|ac3|eac3|alac|pcm") { $incompatible = $true }
-                if ($incompatible) { $targetAudioCodec = "aac"; $targetAudioBitrate = "128k"; Write-Host "  $($S.Bullet) Audio incompatible. Encoding to AAC." -ForegroundColor Yellow }
+                if ($forceAac) {
+                    Write-Host "  $($S.Bullet) [FALLBACK] Encoding audio to AAC as part of container fallback." -ForegroundColor Yellow
+                    $targetAudioCodec = "aac"; $targetAudioBitrate = "128k"
+                } else {
+                    $incompatible = $false
+                    if ($finalExt -eq ".mp4" -and $aCodec -notmatch "aac|mp3|opus|ac3|eac3|mp2|mp1") { $incompatible = $true }
+                    elseif ($finalExt -eq ".mov" -and $aCodec -notmatch "aac|mp3|ac3|eac3|alac|pcm") { $incompatible = $true }
+                    if ($incompatible) { $targetAudioCodec = "aac"; $targetAudioBitrate = "128k"; Write-Host "  $($S.Bullet) Audio incompatible. Encoding to AAC." -ForegroundColor Yellow }
+                }
             }
 
             $success = $false
